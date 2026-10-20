@@ -18,9 +18,6 @@ def verify(zip_path: Path):
             'App/AppInfo/appicon.ico',
             'Other/README.txt',
             'Other/ZenUpdateCleanup.ps1',
-            'Other/Enable-Zen-Cleanup.cmd',
-            'Other/Disable-Zen-Cleanup.cmd',
-            'Other/Apply-Zen-Startup-Fix.ps1', 'Other/APPLY-STARTUP-FIX.cmd',
         ] + [f'App/AppInfo/appicon_{n}.png' for n in (16,32,75,128,256)]
         missing = [p for p in expected if prefix + p not in names]
         if missing:

@@ -1,0 +1,11 @@
+ONE-TIME VALIDATION FOR CROSS-PC PORTABILITY (NOT DAILY USE)
+
+1. On your CURRENT PC, back up the entire working ZenBrowserPortable directory before replacing anything.
+2. Build the new ZIP through GitHub Actions. If the CityHash self-test or C# compile fails, stop and share the GitHub Actions log.
+3. Close Zen and retain existing Data. Replace only App, Other and the root ZenBrowserPortable.exe.
+4. Double-click ZenBrowserPortable.exe; browse, use private mode, close completely.
+5. Read Data\UpdaterCleanup\launcher.log and cleanup.log. The updater ID shown should correspond to the folder Zen actually created. If not, STOP. Do not manually remove unknown ProgramData files.
+6. For zero-setup confirmation, copy the entire portable folder to a clean Windows VM or a different PC. Do NOT copy any machine-specific cleanup approval/configuration file; the new code ignores it anyway.
+7. Run only ZenBrowserPortable.exe. Verify settings and bookmarks retained, then close and inspect for AppData, ProgramData, shortcuts and registry remnants. If desired, perform a one-time TraceGuard comparison.
+8. Check coexistence with Thunderbird, installed Zen or Firefox separately. Other applications' state must remain intact.
+9. Do not claim zero host remnants until the fresh-PC registry and filesystem audit is clean. OS-generated execution traces are outside the scope.

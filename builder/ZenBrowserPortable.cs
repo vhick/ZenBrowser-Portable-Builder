@@ -26,9 +26,9 @@ internal static class ZenBrowserPortable
     }
 
     // Automatically clean shortcuts that point to THIS portable installation.
-    // Optional ProgramData updater cleanup still requires exact-folder approval
-    // once per Windows setup. Never elevate or delete unknown Mozilla files.
-    private static void TryPostExitCleanup(string root)
+    // Install-specific update folder is derived automatically at each launch.
+    // Never elevate, recursively delete Mozilla data, or touch unknown files.
+    private static void TryPostExitCleanup(string root, string installHash)
     {
         string script = Path.Combine(root, @"Other\ZenUpdateCleanup.ps1");
         if (!File.Exists(script))
@@ -42,7 +42,7 @@ internal static class ZenBrowserPortable
                 @"System32\WindowsPowerShell\v1.0\powershell.exe");
             var psi = new ProcessStartInfo(powerShell);
             psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script +
-                "\" -Mode Clean -Root \"" + root + "\"";
+                "\" -Mode Clean -Root \"" + root + "\" -InstallHash " + installHash;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             LogLauncher(root, "Automatic post-exit cleanup started.");
@@ -162,6 +162,11 @@ internal static class ZenBrowserPortable
         string exe = Path.Combine(root, @"App\Zen\zen.exe");
         string profile = Path.Combine(root, @"Data\Profile");
         string temp = Path.Combine(root, @"Data\Temp");
+        // These environment variables are changed ONLY for this child process.
+        // Some Windows shell APIs ignore them, so verified post-exit cleanup remains.
+        string roaming = Path.Combine(root, @"Data\HostEnvironment\Roaming");
+        string local = Path.Combine(root, @"Data\HostEnvironment\Local");
+        string installHash = InstallHash.ForDirectory(Path.GetDirectoryName(exe));
         try
         {
             if (!File.Exists(exe))
@@ -179,6 +184,8 @@ internal static class ZenBrowserPortable
             }
             Directory.CreateDirectory(profile);
             Directory.CreateDirectory(temp);
+            Directory.CreateDirectory(roaming);
+            Directory.CreateDirectory(local);
             // One active portable launcher to reduce conflicting write access to the profile.
             using (var gate = new System.Threading.Mutex(false, @"Local\ZenBrowserPortable_Community_Launcher"))
             {
@@ -195,13 +202,15 @@ internal static class ZenBrowserPortable
                     }
                     // Apply settings after the single-instance lock is held.
                     EnsurePortablePreferences(root, profile);
-                    LogLauncher(root, "Startup preferences checked; starting portable Zen.");
+                    LogLauncher(root, "Portable setup automatic; updater ID " + installHash + "; starting Zen.");
                     var psi = new ProcessStartInfo(exe);
                     psi.UseShellExecute = false;
                     psi.WorkingDirectory = Path.GetDirectoryName(exe);
                     psi.Arguments = "--no-remote --profile \"" + profile + "\"";
                     psi.EnvironmentVariables["TEMP"] = temp;
                     psi.EnvironmentVariables["TMP"] = temp;
+                    psi.EnvironmentVariables["APPDATA"] = roaming;
+                    psi.EnvironmentVariables["LOCALAPPDATA"] = local;
                     psi.EnvironmentVariables["MOZ_CRASHREPORTER_DISABLE"] = "1";
                     // No global PATH, registry or default-browser modifications.
                     using (Process child = Process.Start(psi))
@@ -219,7 +228,7 @@ internal static class ZenBrowserPortable
                             // Wait for ALL Zen processes, not just the first launched PID.
                             // May stay active until the user's actual browser session ends.
                             // The PowerShell helper still rechecks before deleting anything.
-                            if (WaitForZenShutdown(root)) TryPostExitCleanup(root);
+                            if (WaitForZenShutdown(root)) TryPostExitCleanup(root, installHash);
                         }
                     }
                 }

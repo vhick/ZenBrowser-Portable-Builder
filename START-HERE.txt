@@ -1,21 +1,10 @@
-FINAL — ZEN BROWSER PORTABLE, ONE-CLICK LAUNCHER
+ZEN BROWSER PORTABLE - CROSS-PC PREVIEW
 
-1. Extract this builder ZIP.
-2. Replace the files in your existing GitHub Zen Portable builder repository,
-   including the .github folder, using GitHub Desktop. Commit and Push origin.
-3. GitHub.com -> Actions -> Build Zen Browser Portable ZIP (Manual) -> Run workflow.
-4. Download the finished artifact and extract the inner portable app ZIP.
-5. On UPGRADES: preserve your existing Data folder and replace only App, Other,
-   and ZenBrowserPortable.exe.
-6. NOW AND EVERY FUTURE TIME: just double-click ZenBrowserPortable.exe.
-   It automatically applies preferences BEFORE Zen starts and cleans verified
-   browser remnants AFTER Zen closes. You never need to run helper scripts
-   as part of the ordinary launch-and-close routine.
+1. Place all these builder files into your existing GitHub builder repository.
+2. Commit and push using GitHub Desktop.
+3. Actions > Build Zen Browser Portable ZIP (Manual) > Run workflow.
+4. Download the generated portable application ZIP.
+5. To upgrade an existing Zen, preserve the original Data folder and replace App, Other and the root ZenBrowserPortable.exe only.
+6. Launch ZenBrowserPortable.exe. No activation or manual cleanup commands.
 
-Logs are under Data\UpdaterCleanup\launcher.log and cleanup.log.
-If there is no prior updater approval on a new Windows PC, ProgramData cleanup
-remains OFF until you approve the exact Zen update folder once. Shortcut cleanup
-works regardless of updater approval.
-
-The ZIP in your hands is the builder SOURCE. The manual GitHub Action produces
-the complete portable APP ZIP, including its original Zen icon.
+This preview has been tested statically and must still be run on a clean Windows PC before zero-setup portability is confirmed. If unknown remnants appear, the cleanup script preserves rather than blindly deletes them.

@@ -1,18 +1,21 @@
-﻿# Zen Browser Portable - post-exit shortcut cleanup; updater cleanup is opt-in (Windows PowerShell 5.1).
-# Start Menu shortcuts: scoped, target-verified cleanup requires no updater approval.
-# This script never recursively deletes Mozilla/ProgramData, uses NO elevation,
-# and NEVER searches for updater folders to delete automatically.
-# It checks only the precise approved update hash and explicit Zen shortcuts.
-# It may remove the exact approved Mozilla parent directory ONLY if empty.
+﻿# Zen Browser Portable - automatic, install-specific cleanup (Windows PowerShell 5.1).
+# The launcher passes the currently computed Mozilla install hash without prompting.
+# No recursive ProgramData deletion, no elevation, never touch other install hashes.
+# Unknown files, linked paths and nonempty shared directories are preserved.
 [CmdletBinding()]
 param(
-  [ValidateSet('Configure','Clean','Check')][string]$Mode = 'Check',
-  [Parameter(Mandatory=$true)][string]$Root
+  [ValidateSet('Clean','Check')][string]$Mode = 'Check',
+  [Parameter(Mandatory=$true)][string]$Root,
+  [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-Fa-f]{16}$')][string]$InstallHash
 )
 $ErrorActionPreference = 'Stop'
 $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\')
 $dataPath = Join-Path $rootPath 'Data\UpdaterCleanup'
-$configPath = Join-Path $dataPath 'approved-update-folder.txt'
+# Identified by the launcher using Mozilla's CityHash64 install-directory scheme.
+# There is no manual approval and no roaming machine-specific path in Data.
+$mozillaRoot = Join-Path $env:ProgramData 'Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38'
+$autoFolder = Join-Path (Join-Path $mozillaRoot 'updates') ($InstallHash.ToUpperInvariant())
+# Legacy machine-specific approvals are deliberately ignored after a move/reformat.
 $logPath = Join-Path $dataPath 'cleanup.log'
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 function Log([string]$msg) {
@@ -279,7 +282,7 @@ function Clean-Approved([string]$approved) {
   $updatesRoot = Split-Path -Path $folder -Parent
   $mozillaRoot = Split-Path -Path $updatesRoot -Parent
   $updateLock = Join-Path $mozillaRoot ('UpdateLock-' + $installationId)
-  # User-requested Windows remnants; every path is logged, backed up and scoped.
+  # Narrowly scoped Windows remnants; every deletion is logged and backed up.
   Clean-Approved-Zen-Shortcut-State $mozillaRoot
   if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
     Log "Approved update folder does not exist: $folder"
@@ -361,42 +364,17 @@ function Clean-Approved([string]$approved) {
   Log 'Cleanup complete. Verified Zen shortcut and updater remnants were checked; other installations were preserved.'
 }
 try {
-  if ($Mode -eq 'Configure') {
-    Write-Host ''
-    Write-Host 'ZEN PORTABLE - OPTIONAL UPDATER REMNANT CLEANUP'
-    Write-Host 'This will ONLY approve the exact Update Folder from Zen about:support.'
-    Write-Host 'It does not clean other Mozilla installation folders.'
-    Write-Host 'Close Zen first. Copy the Update Folder path from about:support.'
-    $provided = Read-Host 'Paste Update Folder path (or its update-config.json path)'
-    $folder = Validate-Folder $provided
-    if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
-      $lockCandidate = Join-Path (Split-Path -Path (Split-Path -Path $folder -Parent) -Parent) ('UpdateLock-' + (Split-Path -Path $folder -Leaf))
-      if (-not (Is-PlainFile $lockCandidate)) { throw 'Neither the approved update directory nor its matching lock file exists. Open about:support and verify the exact path.' }
-      if ((Get-Item -LiteralPath $lockCandidate -Force).Length -ne 0) { throw 'Matching lock is unexpectedly not zero bytes; refusing approval.' }
-      Write-Host 'Update folder was removed but its exact matching lock exists. You can approve this installation hash.'
-    }
-    Write-Host "Approved target (after Zen exits): $folder"
-    $confirm = Read-Host 'Type APPROVE to enable optional cleanup'
-    if ($confirm -cne 'APPROVE') { Write-Host 'Cancelled. No cleanup enabled.'; exit 1 }
-    Set-Content -LiteralPath $configPath -Value $folder -Encoding UTF8
-    Log "Opt-in confirmed: $folder"
-    Write-Host 'Configured. Next time you close the root ZenBrowserPortable.exe, cleanup will be attempted.'
-  } elseif ($Mode -eq 'Check') {
-    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { Log 'ProgramData updater cleanup is OFF; verified Start Menu shortcut cleanup still runs after browser exit.'; exit 0 }
-    $approved = (Get-Content -LiteralPath $configPath -Raw).Trim()
-    Log ('Cleanup is configured for: ' + (Validate-Folder $approved))
-  } else {
-    # Safe shortcut cleanup works without any updater-folder approval.
-    # Only exact shortcuts targeting this portable package can be removed.
-    if (-not (Wait-For-ZenExit 18)) { exit 0 }
-    Clean-Portable-StartMenu-Shortcuts
-    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-      Log 'Updater cleanup is OFF (no approved folder). Verified shortcut cleanup finished.'
-      exit 0
-    }
-    $approved = (Get-Content -LiteralPath $configPath -Raw).Trim()
-    Clean-Approved $approved
+  $folder = Validate-Folder $autoFolder
+  if ($Mode -eq 'Check') {
+    Log "Automatic update target for THIS portable directory: $folder"
+    exit 0
   }
+  if (-not (Wait-For-ZenExit 18)) { exit 0 }
+  Clean-Portable-StartMenu-Shortcuts
+  # This ID must correspond to the directory from the current portable launcher.
+  # If the hash is not the one used by Zen, preserve all unrelated Mozilla data.
+  Log "Automatic current-install updater check: $folder"
+  Clean-Approved $folder
 } catch {
   Log "SKIP/ERROR: $($_.Exception.Message)"
   exit 2

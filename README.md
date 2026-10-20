@@ -1,70 +1,60 @@
-# Zen Browser Portable — Final One-Click Builder
+# Zen Browser Portable — one-click cross-PC preview
 
-This is a **GitHub Actions build kit**, not the Zen browser application. Running its **manual** GitHub Action creates a downloadable complete `ZenBrowserPortable` application ZIP. It uses official Zen release binaries and the original official Zen icon.
+A standalone manually-run GitHub Actions Windows portable builder, based on the existing tested user installation. This is a **test candidate**, not independently validated on a clean Windows machine.
 
-## Normal use: only one executable
+## What the build creates
 
-After building the application, **double-click `ZenBrowserPortable.exe`**. Don't open the helper `.cmd`/`.ps1` scripts before starting Zen. Don't launch `App\Zen\zen.exe` directly.
-
-The root launcher automatically:
-
-1. Applies shortcut-prevention settings **before** the browser starts, preserving and backing up an existing `Data\Profile\user.js` when it changes.
-2. Launches Zen with the saved browser profile under `Data\Profile` and temporary files under `Data\Temp`.
-3. Waits for the main Zen process **and every remaining `zen.exe` process** to close, then confirms the process list stays clear for several seconds. The launcher remains active while the browser is open. This fixes the early cleanup attempt after only the first process exits.
-4. Runs `Other\ZenUpdateCleanup.ps1` silently **only after all Zen processes are gone**. It backs up and removes only verified Start Menu links that belong to this portable Zen. If updater cleanup was already approved, it also removes only the approved updater remnants.
-5. Writes `Data\UpdaterCleanup\launcher.log` (automation record) and `Data\UpdaterCleanup\cleanup.log` (individual cleanup results).
-
-**Previously approved updater folder:** Approval is stored in your existing `Data\UpdaterCleanup\approved-update-folder.txt`. **Keep your current Data folder** on upgrades to retain that approval and all browser settings; then there are **no manual scripts to run at every launch**.
-
-**Exception for a fresh Windows setup:** If you have never opted into the optional system-level updater cleanup, it remains **off** for safety. To enable it on that Windows installation, close Zen and use `Other\Enable-Zen-Cleanup.cmd` *once*, entering the exact Zen Update Folder from `about:support`. Shortcut cleanup does **not** require this approval. No extra helper needs to be run during normal use.
-
-## Build the real portable ZIP on GitHub
-
-1. Extract **this builder ZIP** on your computer.
-2. Open your **existing Zen Portable builder repository** with GitHub Desktop (or create an empty repository if needed).
-3. In GitHub Desktop choose **Repository → Show in Explorer**. Copy all contents of the extracted kit into your local repository, including the hidden `.github` folder. Allow files to replace older builder files.
-4. In GitHub Desktop choose **Commit to main → Push origin**.
-5. Open GitHub.com → your repository → **Actions → Build Zen Browser Portable ZIP (Manual) → Run workflow**. Keep `1.23.3b` and `x64` for a standard Windows Intel/AMD PC, unless selecting a newer official stable tag.
-6. After a green successful run, download the **Artifacts** ZIP, extract it, and then extract the inner `ZenBrowser-<version>-x64-Portable.zip` to get the actual portable application.
-7. Open `ZenBrowserPortable\ZenBrowserPortable.exe`. You need no `.cmd` file or PowerShell window for ordinary use.
-
-You can build new Zen versions manually in GitHub Actions. The action does **not** automatically sync the upstream repository or build portable artifacts on a schedule. It verifies the official Windows installer against the SHA-256 checksum published on the official GitHub release before extraction.
-
-## Upgrade without losing your settings
-
-1. Close all Zen windows and processes.
-2. Make a backup of your existing `ZenBrowserPortable\Data` folder.
-3. Extract the newly built portable ZIP separately.
-4. In your existing portable installation, replace **only** `App`, `Other`, and the root `ZenBrowserPortable.exe` with the files from the newly built package.
-5. **Do not overwrite, replace, or delete `Data`.** It contains your profile, settings, extensions, bookmarks, logins, and previous updater-cleanup approval.
-6. Double-click `ZenBrowserPortable.exe` as usual.
-
-Do not use an older Zen binary with a profile that was upgraded by a newer Zen version.
-
-## Structure of actual app ZIP
-
-```text
+```
 ZenBrowserPortable/
-├─ ZenBrowserPortable.exe       ← the ONE shortcut/launcher to use
-├─ App/
-│  ├─ Zen/                      ← official Zen browser program files
-│  └─ AppInfo/                  ← original icon and PortableApps metadata
-├─ Data/
-│  ├─ Profile/                  ← keep on every upgrade
-│  ├─ Temp/
-│  └─ UpdaterCleanup/          ← approval, logs, file backups
-└─ Other/                       ← helpers auto-run by the root launcher
+  ZenBrowserPortable.exe     <- the only normal launcher
+  App/                       <- replace for updates
+    Zen/
+    AppInfo/
+  Data/                      <- NEVER replace on updates
+    Profile/                 <- browser settings, bookmarks, extensions, history
+    Temp/
+    HostEnvironment/
+      Roaming/
+      Local/
+    UpdaterCleanup/
+  Other/
+    ZenUpdateCleanup.ps1      <- automatic internal helper (no manual setup)
 ```
 
-## Limits and safeguards
+## How to build
 
-This is a **community-built Windows portable ZIP**, not an official Zen or `.paf.exe` package. The launcher is generated on the Windows GitHub Actions runner. The builder has offline tests, but a new compiled launcher must still be run and verified on a real Windows PC. Firefox-derived Windows integration may still create files *while Zen runs*; the cleaner removes only verified known remnants *after Zen closes*. It does not promise zero Windows traces, and it does not recursively erase shared Mozilla ProgramData folders, delete other installations' links, or elevate privileges.
+1. Add this kit to your `ZenBrowser-Portable-Builder` GitHub repository, replacing previous files (delete old obsolete command helpers).
+2. In GitHub Desktop, **Commit** and **Push origin**.
+3. In GitHub, select **Actions → Build Zen Browser Portable ZIP (Manual) → Run workflow**.
+4. Download the finished `ZenBrowser-...-Portable.zip` artifact and extract it.
+5. **If updating an existing installation:** back up and KEEP your existing `Data` folder; copy only new `App`, `Other` and `ZenBrowserPortable.exe` into the existing portable directory. Never overwrite existing `Data`.
+6. Double-click **ZenBrowserPortable.exe**. No manual updater approvals, TraceGuard or cleanup commands.
 
-Official releases: https://github.com/zen-browser/desktop/releases
-Zen project: https://github.com/zen-browser/desktop
+## What happens automatically
 
-For historical troubleshooting notes, see `TECHNICAL-HISTORY.md`.
+* Windows .NET launcher selects portable `Data\Profile` with `--no-remote --profile`.
+* Only the Zen child process gets redirected `TEMP`, `TMP`, `APPDATA` and `LOCALAPPDATA` environment variables. These do **not** guarantee Windows Shell folder APIs will follow them.
+* Portable browser policies disable self-update and the default-browser agent where Zen honors Firefox policies.
+* After *all* `zen.exe` processes close, the launcher invokes targeted PowerShell cleanup without a prompt. The script validates the calculated Mozilla installation hash, checks the policy, validates shortcut targets, backs up each removed file, and never recursively deletes Mozilla directories.
+* If the hash doesn't correspond to Zen's actual update root, the cleaner may **leave** updater files rather than guess a different hash. Inspect `Data\UpdaterCleanup\cleanup.log` if this happens.
+* Unknown files and data owned by Thunderbird or another Zen installation are left untouched.
 
-### Important: exit timing fix (October 20, 2026)
+## Move to another Windows PC or after reinstalling Windows
 
-Previous launchers waited only for the initial Zen PID, then tried cleanup after 18 seconds even if other Zen processes remained. This build waits for **all** `zen.exe` processes to close and stay absent briefly before launching the cleanup helper. Other installed Zen instances will also prevent cleanup until closed, matching the helper's safety check. Do not kill Zen processes just to force cleanup. After replacing the launcher, check `Data\UpdaterCleanup\launcher.log` for the line `All zen.exe processes closed and remained absent; starting safe cleanup.` and `cleanup.log` for actual cleanup results. For testing, the new compiled launcher is required: replacing `Other` alone cannot fix the old executable.
+Back up the **entire** `ZenBrowserPortable` folder before reinstalling Windows. Copy it to the new system and start `ZenBrowserPortable.exe`. Your portable profile is preserved. You may have to sign back into Zen Sync, websites, and extensions, and Windows-protected saved passwords may not decrypt on the new account.
+
+## Important limitations
+
+* This is **not a guarantee of zero Windows remnants**. Some browser code uses Windows APIs that bypass environment variables; crash handling, default-browser integration, registry state, filesystem junctions, and OS caches need validation. We intentionally do **not** delete registry keys or shared Mozilla files without proof of ownership.
+* Portable startup might behave differently on a fresh Windows PC and must be tested there. The next validation step is a clean-Windows VM or second computer, with Thunderbird installed as a noninterference check, using TraceGuard only for that one-time engineering test.
+* The portable profile may include private data. Don't share your `Data` folder publicly or upload it into GitHub.
+* Zen built-in update is disabled; rebuild from the official releases promptly for security updates.
+
+## Technical checks and sources
+
+* The builder fetches the chosen official Zen tag, verifies release SHA-256, extracts official binaries, and reuses the official icon.
+* Microsoft .NET Framework 4.x C# launcher compiles on GitHub's Windows runner.
+* The builder compiles and runs a CityHash64 self-test before compiling the launcher. CityHash matches Google public reference vectors.
+* Mozilla `GetInstallHash` hashes the resolved install directory using CityHash64 over UTF-16LE bytes. Cached `TaskBarIDs` entries matching the *exact installation path* are honored.
+* The calculated installation path may not precisely match Mozilla's resolved junction/casing or an old cached hash. In these cases, cleanup is deliberately conservative.
+* Sources: https://github.com/HasNetwork/zen-browser-portable, https://github.com/google/cityhash, https://firefox-admin-docs.mozilla.org/reference/policies/disableappupdate/, https://raw.githubusercontent.com/mozilla-firefox/firefox/main/toolkit/xre/nsXREDirProvider.cpp
