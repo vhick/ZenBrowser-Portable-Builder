@@ -1,11 +1,17 @@
-ONE-TIME VALIDATION FOR CROSS-PC PORTABILITY (NOT DAILY USE)
+Zen Browser Portable - current-install hash and registry-restore validation
 
-1. On your CURRENT PC, back up the entire working ZenBrowserPortable directory before replacing anything.
-2. Build the new ZIP through GitHub Actions. If the CityHash self-test or C# compile fails, stop and share the GitHub Actions log.
-3. Close Zen and retain existing Data. Replace only App, Other and the root ZenBrowserPortable.exe.
-4. Double-click ZenBrowserPortable.exe; browse, use private mode, close completely.
-5. Read Data\UpdaterCleanup\launcher.log and cleanup.log. The updater ID shown should correspond to the folder Zen actually created. If not, STOP. Do not manually remove unknown ProgramData files.
-6. For zero-setup confirmation, copy the entire portable folder to a clean Windows VM or a different PC. Do NOT copy any machine-specific cleanup approval/configuration file; the new code ignores it anyway.
-7. Run only ZenBrowserPortable.exe. Verify settings and bookmarks retained, then close and inspect for AppData, ProgramData, shortcuts and registry remnants. If desired, perform a one-time TraceGuard comparison.
-8. Check coexistence with Thunderbird, installed Zen or Firefox separately. Other applications' state must remain intact.
-9. Do not claim zero host remnants until the fresh-PC registry and filesystem audit is clean. OS-generated execution traces are outside the scope.
+This is an UNVALIDATED WINDOWS PREVIEW. No manual scripts are needed in routine use.
+
+1. On Windows, back up the entire ZenBrowserPortable/Data folder.
+2. Build from this GitHub kit manually. Preserve the old Data folder and use the newly built App, Other and root ZenBrowserPortable.exe.
+3. Close all Zen processes. Start ONLY ZenBrowserPortable.exe.
+4. After normal shutdown, inspect:
+   Data/UpdaterCleanup/launcher.log (computed updater ID and helper exit codes)
+   Data/UpdaterCleanup/cleanup.log (exact updater files removed or retained)
+   Data/HostEnvironment/Registry/registry.log (baseline restored or skipped)
+5. Confirm only the current installation-hash updater folder and matching UpdateLock were considered. Thunderbird updater files must remain untouched.
+6. Registry expectation: HKCU/Software/Mozilla/Zen should be back to the state it had immediately before starting the portable browser, not necessarily absent if it existed before.
+7. Clean-PC / post-Windows reinstall test: start with no HKCU/Software/Mozilla/Zen key. After normal exit, there should be no Zen registry key and no monitored Zen-specific host updater/shortcut files.
+8. If the exact previous updater hash is not the current browser's computed/cached installation hash, the cleaner intentionally retains it for safety. Do not manually delete shared Mozilla data.
+9. Crash/forced-termination and concurrent third-party Zen sessions are not guaranteed to restore registry data. This preview refuses startup when another zen.exe is running to reduce the risk.
+10. Never overwrite Data when upgrading; delete only obsolete App/Other/launcher files after backing up Data.

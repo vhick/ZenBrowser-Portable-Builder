@@ -19,6 +19,7 @@ ZenBrowserPortable/
     UpdaterCleanup/
   Other/
     ZenUpdateCleanup.ps1      <- automatic internal helper (no manual setup)
+    ZenRegistryGuard.ps1      <- automatic prelaunch registry snapshot / postexit restore
 ```
 
 ## How to build
@@ -45,7 +46,7 @@ Back up the **entire** `ZenBrowserPortable` folder before reinstalling Windows. 
 
 ## Important limitations
 
-* This is **not a guarantee of zero Windows remnants**. Some browser code uses Windows APIs that bypass environment variables; crash handling, default-browser integration, registry state, filesystem junctions, and OS caches need validation. We intentionally do **not** delete registry keys or shared Mozilla files without proof of ownership.
+* This is **not a guarantee of zero Windows remnants**. Some browser code uses Windows APIs that bypass environment variables; crash handling, default-browser integration, registry state, filesystem junctions, and OS caches need validation. The launcher now snapshots **HKCU\Software\Mozilla\Zen** before starting and restores that exact prior state after normal shutdown; it does not wipe pre-existing installed Zen data or alter HKLM. No shared Mozilla folders are deleted recursively. Interrupted sessions, concurrent installed Zen, and Windows-owned logs remain limitations.
 * Portable startup might behave differently on a fresh Windows PC and must be tested there. The next validation step is a clean-Windows VM or second computer, with Thunderbird installed as a noninterference check, using TraceGuard only for that one-time engineering test.
 * The portable profile may include private data. Don't share your `Data` folder publicly or upload it into GitHub.
 * Zen built-in update is disabled; rebuild from the official releases promptly for security updates.
@@ -58,3 +59,13 @@ Back up the **entire** `ZenBrowserPortable` folder before reinstalling Windows. 
 * Mozilla `GetInstallHash` hashes the resolved install directory using CityHash64 over UTF-16LE bytes. Cached `TaskBarIDs` entries matching the *exact installation path* are honored.
 * The calculated installation path may not precisely match Mozilla's resolved junction/casing or an old cached hash. In these cases, cleanup is deliberately conservative.
 * Sources: https://github.com/HasNetwork/zen-browser-portable, https://github.com/google/cityhash, https://firefox-admin-docs.mozilla.org/reference/policies/disableappupdate/, https://raw.githubusercontent.com/mozilla-firefox/firefox/main/toolkit/xre/nsXREDirProvider.cpp
+
+
+## Registry safeguards in this preview
+
+- `ZenRegistryGuard.ps1` is executed automatically **Before** Zen starts and **After** all Zen processes stop. Do not run it manually.
+- It backs up existing `HKCU\Software\Mozilla\Zen` keys into `Data\HostEnvironment\Registry` and restores those keys after normal exit. If there was no key originally, it removes the newly created key.
+- It never touches `HKLM`, Thunderbird, or sibling Firefox registry branches; it does not erase keys that existed before launch.
+- To avoid overwriting another Zen installation's active settings, the launcher refuses to run while an unrelated Zen process is open.
+- Incomplete sessions (power loss, forced kill, crash) are **not** automatically rolled back later, because later changes to a host registry may belong to other applications. Backups are retained for diagnosis.
+- This preview has not been tested on a clean Windows VM, so do **not** claim it is certified trace-free.

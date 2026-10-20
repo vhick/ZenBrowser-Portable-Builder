@@ -12,14 +12,15 @@ class CrossPcBuilderTests(unittest.TestCase):
         cls.clean=(ROOT/'builder/ZenUpdateCleanup.ps1').read_text(encoding='utf-8-sig')
         cls.build=(ROOT/'builder/build_windows.ps1').read_text(encoding='utf-8-sig')
         cls.hash=(ROOT/'builder/InstallHash.cs').read_text()
+        cls.registry=(ROOT/'builder/ZenRegistryGuard.ps1').read_text()
     def test_required_sources_exist(self):
-        for x in ['ZenBrowserPortable.cs','InstallHash.cs','hash_test.cs','ZenUpdateCleanup.ps1','build_windows.ps1','verify_zip.py']:
+        for x in ['ZenBrowserPortable.cs','InstallHash.cs','hash_test.cs','ZenUpdateCleanup.ps1','ZenRegistryGuard.ps1','build_windows.ps1','verify_zip.py']:
             self.assertTrue((ROOT/'builder'/x).is_file(),x)
     def test_no_manual_approval_parameter_or_mode(self):
         self.assertNotIn("Read-Host",self.clean)
         self.assertNotIn("'Configure'",self.clean)
         self.assertIn('-InstallHash',self.launch)
-        self.assertIn("ValidatePattern('^[0-9A-Fa-f]{16}$')",self.clean)
+        self.assertIn("ValidatePattern('^[0-9A-Fa-f]{1,16}$')",self.clean)
     def test_launcher_subprocess_only_redirection(self):
         for name in ['TEMP','TMP','APPDATA','LOCALAPPDATA']:
             self.assertIn('psi.EnvironmentVariables["'+name+'"]',self.launch)
@@ -51,6 +52,23 @@ class CrossPcBuilderTests(unittest.TestCase):
         self.assertIn('Test-PortableShortcut',self.clean)
         self.assertIn('private_browsing.exe',self.clean)
         self.assertIn('shortcut belongs to a different target',self.clean)
+    def test_registry_before_and_after_automatic(self):
+        self.assertIn('RegistryGuard(root, "Before")',self.launch)
+        self.assertIn('RegistryGuard(root, "After")',self.launch)
+        self.assertLess(self.launch.index('RegistryGuard(root, "Before")'),self.launch.index('Process.Start(psi)',self.launch.index('registryOutstanding = true')))
+        self.assertIn("'HKCU\\Software\\Mozilla\\Zen'",self.registry)
+        self.assertIn("@('export',$regKey,$beforeReg,'/y')",self.registry)
+        self.assertIn("@('import',$beforeReg)",self.registry)
+        self.assertIn('Check-No-Zen',self.registry)
+        self.assertIn('$_',self.registry)
+        self.assertNotIn('HKEY_LOCAL_MACHINE',self.registry)
+        self.assertIn("ZenRegistryGuard.ps1",self.build)
+    def test_hash_uses_hklm_then_hkcu(self):
+        a=self.hash.index('Registry.LocalMachine')
+        b=self.hash.index('Registry.CurrentUser',a)
+        self.assertLess(a,b)
+        self.assertIn('TaskBarIDs',self.hash)
+        self.assertIn('RegistryValueKind.String',self.hash)
     def test_policy_and_program_binary_pinned(self):
         for x in ['DisableAppUpdate','DisableDefaultBrowserAgent','DontCheckDefaultBrowser']:
             self.assertIn(x,self.build)
@@ -64,7 +82,7 @@ class CrossPcBuilderTests(unittest.TestCase):
     def test_clean_zip_check_requires_no_profile(self):
         spec=importlib.util.spec_from_file_location('verify_zip',ROOT/'builder/verify_zip.py')
         mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
-        names=['ZenBrowserPortable.exe','App/Zen/zen.exe','App/Zen/omni.ja','App/Zen/xul.dll','App/Zen/distribution/policies.json','App/AppInfo/appinfo.ini','App/AppInfo/appicon.ico','Other/README.txt','Other/ZenUpdateCleanup.ps1','App/Zen/browser/chrome.manifest']+[f'App/AppInfo/appicon_{x}.png' for x in [16,32,75,128,256]]
+        names=['ZenBrowserPortable.exe','App/Zen/zen.exe','App/Zen/omni.ja','App/Zen/xul.dll','App/Zen/distribution/policies.json','App/AppInfo/appinfo.ini','App/AppInfo/appicon.ico','Other/README.txt','Other/ZenUpdateCleanup.ps1','Other/ZenRegistryGuard.ps1','App/Zen/browser/chrome.manifest']+[f'App/AppInfo/appicon_{x}.png' for x in [16,32,75,128,256]]
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'x.zip'
             with zipfile.ZipFile(path,'w') as z:

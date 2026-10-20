@@ -69,6 +69,46 @@ internal static class ZenBrowserPortable
         }
     }
 
+    // Run the Windows registry guard as this user, never as administrator.
+    // A pre-launch snapshot is required; the after-run restore is best-effort
+    // and runs only when no Zen processes are present.
+    private static bool RegistryGuard(string root, string mode)
+    {
+        string script = Path.Combine(root, @"Other\ZenRegistryGuard.ps1");
+        if (!File.Exists(script))
+        {
+            LogLauncher(root, "ERROR: Registry guard helper missing: " + script);
+            return false;
+        }
+        try
+        {
+            string powerShell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                @"System32\WindowsPowerShell\v1.0\powershell.exe");
+            var psi = new ProcessStartInfo(powerShell);
+            psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script +
+                "\" -Mode " + mode + " -Root \"" + root + "\"";
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            using (Process helper = Process.Start(psi))
+            {
+                if (helper == null) return false;
+                if (!helper.WaitForExit(30000))
+                {
+                    LogLauncher(root, "ERROR: Registry guard " + mode + " timed out.");
+                    // Do not kill an in-progress registry restore.
+                    return false;
+                }
+                LogLauncher(root, "Registry guard " + mode + " exit code " + helper.ExitCode + ".");
+                return helper.ExitCode == 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogLauncher(root, "ERROR: Registry guard " + mode + ": " + ex.Message);
+            return false;
+        }
+    }
+
     // The initial zen.exe process may exit while other Zen processes are still
     // loading or while the actual browser remains open. Waiting only for that
     // initial PID caused cleanup to run during the browsing session.
@@ -167,6 +207,7 @@ internal static class ZenBrowserPortable
         string roaming = Path.Combine(root, @"Data\HostEnvironment\Roaming");
         string local = Path.Combine(root, @"Data\HostEnvironment\Local");
         string installHash = InstallHash.ForDirectory(Path.GetDirectoryName(exe));
+        bool registryOutstanding = false;
         try
         {
             if (!File.Exists(exe))
@@ -200,6 +241,26 @@ internal static class ZenBrowserPortable
                             "Zen Browser Portable", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return 4;
                     }
+                    // Do not run alongside a different installed Zen instance:
+                    // snapshotting its registry would risk losing its changes.
+                    Process[] otherZen = Process.GetProcessesByName("zen");
+                    int otherCount = otherZen.Length;
+                    foreach (Process process in otherZen) process.Dispose();
+                    if (otherCount != 0)
+                    {
+                        MessageBox.Show("Another Zen Browser is already running. Close it before starting the portable copy.",
+                            "Zen Browser Portable", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return 6;
+                    }
+                    // Snapshot the HKCU Zen registry tree BEFORE launching the browser.
+                    // If snapshot fails, don't run an unprotected session.
+                    if (!RegistryGuard(root, "Before"))
+                    {
+                        MessageBox.Show("Cannot safeguard Windows Zen registry settings. See Data\\HostEnvironment\\Registry\\registry.log.",
+                            "Zen Browser Portable", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return 7;
+                    }
+                    registryOutstanding = true;
                     // Apply settings after the single-instance lock is held.
                     EnsurePortablePreferences(root, profile);
                     LogLauncher(root, "Portable setup automatic; updater ID " + installHash + "; starting Zen.");
@@ -228,7 +289,15 @@ internal static class ZenBrowserPortable
                             // Wait for ALL Zen processes, not just the first launched PID.
                             // May stay active until the user's actual browser session ends.
                             // The PowerShell helper still rechecks before deleting anything.
-                            if (WaitForZenShutdown(root)) TryPostExitCleanup(root, installHash);
+                            if (WaitForZenShutdown(root))
+                            {
+                                try { TryPostExitCleanup(root, installHash); }
+                                finally
+                                {
+                                    // Run even when updater cleanup skipped an unknown file.
+                                    if (RegistryGuard(root, "After")) registryOutstanding = false;
+                                }
+                            }
                         }
                     }
                 }
@@ -237,6 +306,11 @@ internal static class ZenBrowserPortable
         }
         catch (Exception exc)
         {
+            // Covers launch failure after a successful pre-launch registry snapshot.
+            if (registryOutstanding && WaitForZenShutdown(root))
+            {
+                if (RegistryGuard(root, "After")) registryOutstanding = false;
+            }
             LogLauncher(root, "ERROR: launcher failed: " + exc.Message);
             MessageBox.Show(exc.Message, "Zen Browser Portable error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;

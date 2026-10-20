@@ -108,14 +108,16 @@ if ($LASTEXITCODE -ne 0) { throw 'CityHash64 reference vectors did not match' }
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcher)) { throw 'Failed to compile Zen portable launcher' }
 
 'All profile data and passwords belong here after first launch. Never upload this folder to GitHub; preserve it when updating. Browser settings are preserved; some Windows-bound sign-ins/passwords may require reauthentication.' | Set-Content (Join-Path $package 'Data\README.txt') -Encoding UTF8
-# Shortcuts: always post-exit with target verification. Updater files: opt-in only.
-foreach ($helper in @('ZenUpdateCleanup.ps1')) {
+# Shortcuts: verified target; updater: exact current install hash; registry: before/after guard.
+foreach ($helper in @('ZenUpdateCleanup.ps1','ZenRegistryGuard.ps1')) {
     Copy-Item -LiteralPath (Join-Path $repo ('builder\' + $helper)) -Destination (Join-Path $package ('Other\' + $helper)) -Force
 }
 @"
 Automatic cleanup is run by ZenBrowserPortable.exe after exit. No activation or approval scripts.
 It only inspects the Mozilla update folder belonging to the current installation hash.
 All files removed are individually backed up. Unknown files and Thunderbird data are preserved.
+HKCU\Software\Mozilla\Zen is snapshotted before launch and restored after exit.
+Pre-existing keys remain present; host registry backup stays inside Data\HostEnvironment\Registry.
 Manual overrides copied from older Data folders are ignored. See Other\README.txt.
 "@ | Set-Content (Join-Path $package 'Data\UpdaterCleanup\README.txt') -Encoding UTF8
 @"
@@ -126,11 +128,13 @@ Official installer SHA-256: $expectedHash
 START: Double-click ZenBrowserPortable.exe, NEVER App\Zen\zen.exe.
 First launch on a different PC: no updater approval or activation step.
 The browser uses Data\Profile and child-only APPDATA/LOCALAPPDATA/TEMP redirection.
-After browser shutdown it checks recognized, current-install updater files and verified shortcuts.
+After browser shutdown it checks recognized, current-install updater files, verified shortcuts,
+and restores the Zen-specific current-user registry branch to its pre-launch state.
 The current installer ID is calculated locally (Mozilla CityHash64 of Zen directory).
 It never recursively removes Mozilla folders, never elevates, and always skips unfamiliar files.
-If the computed installation ID differs from Zen's actual internal cached ID, cleanup skips that
-folder rather than delete another installation's files; this requires Windows validation.
+Mozilla registry cached installation IDs are checked HKLM then HKCU before CityHash fallback.
+If the ID still differs from Zen's internal ID, cleanup safely leaves uncertain files.
+No elevated privileges, and no HKLM registry changes are made. Windows verification is essential.
 
 UPDATE: preserve your existing Data folder. Replace root launcher, App and Other only.
 Do not replace an existing Data folder with the blank Data from a new package.

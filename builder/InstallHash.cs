@@ -70,14 +70,23 @@ internal static class InstallHash
        // Compare Mozilla's installation path hash; never use this for security verification.
        string dir=Path.GetFullPath(path).TrimEnd('\\');
        // Mozilla can use a previously cached per-installation hash. Only accept exact path keys.
-       try { using(RegistryKey taskIds=Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Mozilla\Zen\TaskBarIDs")) {
-          if(taskIds!=null) foreach(string key in taskIds.GetValueNames()) {
-            if(string.Equals(key,dir,StringComparison.OrdinalIgnoreCase)) {
-              string result=taskIds.GetValue(key) as string;
-              if(!string.IsNullOrEmpty(result) && System.Text.RegularExpressions.Regex.IsMatch(result,@"\A[0-9A-Fa-f]{16}\z")) return result.ToUpperInvariant();
-            }
-          }
-       }} catch { /* Fall back to Mozilla's normal path hash. */ }
+       // Match Mozilla's implementation: HKLM cached ID takes precedence over HKCU.
+       // The name is the exact installation path, never a guessed Zen Installer subkey.
+       foreach (RegistryKey hive in new RegistryKey[] { Registry.LocalMachine, Registry.CurrentUser }) {
+          try {
+             using(RegistryKey taskIds=hive.OpenSubKey(@"SOFTWARE\Mozilla\Zen\TaskBarIDs", false)) {
+                if(taskIds==null) continue;
+                foreach(string key in taskIds.GetValueNames()) {
+                   if(!string.Equals(key,dir,StringComparison.OrdinalIgnoreCase)) continue;
+                   if(taskIds.GetValueKind(key)!=RegistryValueKind.String) continue;
+                   string result=taskIds.GetValue(key) as string;
+                   if(!string.IsNullOrEmpty(result) &&
+                      System.Text.RegularExpressions.Regex.IsMatch(result,@"\A[0-9A-Fa-f]{1,16}\z"))
+                      return result.ToUpperInvariant();
+                }
+             }
+          } catch { /* Do not infer ownership from inaccessible registry data. */ }
+       }
        return CityHash64(Encoding.Unicode.GetBytes(dir)).ToString("X16");
     }
 }

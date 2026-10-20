@@ -6,7 +6,7 @@
 param(
   [ValidateSet('Clean','Check')][string]$Mode = 'Check',
   [Parameter(Mandatory=$true)][string]$Root,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-Fa-f]{16}$')][string]$InstallHash
+  [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-Fa-f]{1,16}$')][string]$InstallHash
 )
 $ErrorActionPreference = 'Stop'
 $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\')
@@ -45,7 +45,7 @@ function Validate-Folder([string]$inputPath) {
   if (-not $match.Success -or -not [guid]::TryParse($match.Groups[1].Value, [ref]$guid)) {
     throw 'Not a recognized Mozilla update root.'
   }
-  if ($parts[2] -cnotmatch '^[0-9a-fA-F]{16}$') { throw 'Unexpected update folder ID.' }
+  if ($parts[2] -cnotmatch '^[0-9a-fA-F]{1,16}$') { throw 'Unexpected update folder ID.' }
   # A junction or symbolic link anywhere in the path can redirect deletion.
   $cursor = $pd
   foreach ($part in $parts) {
