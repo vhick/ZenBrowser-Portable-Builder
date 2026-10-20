@@ -1,0 +1,29 @@
+ZEN BROWSER PORTABLE — OCT 20 FULL SHUTDOWN FIX
+
+ROOT CAUSE:
+The compiled ZenBrowserPortable.exe waited for only the first zen.exe PID.
+On Firefox-family browsers the initial process can exit while other zen.exe
+processes continue running. Thus cleanup started during browser use and the
+script correctly refused to delete any remnant after waiting 18 seconds.
+
+HOW TO UPDATE THE GITHUB REPOSITORY:
+1. Copy builder/ZenBrowserPortable.cs and tests/test_builder.py into your
+   existing repository, replacing the prior versions.
+2. If using the full-builder ZIP instead of this small patch, copy all its
+   contents into the repository (including .github), not just these two files.
+3. Commit and Push origin in GitHub Desktop.
+4. Run Build Zen Browser Portable ZIP (Manual) in Actions.
+5. Extract the resulting artifact ZIP, then its inner portable ZIP.
+6. Close Zen and BACK UP YOUR EXISTING Data folder.
+7. Copy the NEW root ZenBrowserPortable.exe into the existing portable folder.
+   You can also replace App and Other from the new package, but NEVER replace
+   or delete the existing Data folder.
+8. Start and close Zen using root ZenBrowserPortable.exe ONLY.
+9. Confirm Data/UpdaterCleanup/launcher.log says:
+   All zen.exe processes closed and remained absent; starting safe cleanup.
+   Then check Data/UpdaterCleanup/cleanup.log for removal results.
+
+This is a launcher fix. It does not change cleanup deletion targets or bypass
+any approval. If another Zen installation is running, cleanup must wait for
+that installation as well because the existing safety script refuses to act
+while any zen.exe remains active.

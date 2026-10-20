@@ -241,6 +241,22 @@ class BuilderTests(unittest.TestCase):
         self.assertIn('launcher.log', launcher)
         self.assertIn('Automatic post-exit cleanup started.', launcher)
 
+    def test_launcher_waits_for_every_zen_process_before_cleanup(self):
+        launcher = (ROOT / 'builder/ZenBrowserPortable.cs').read_text(encoding='utf-8')
+        self.assertIn('Process.GetProcessesByName("zen")', launcher)
+        self.assertIn('quietChecks < 5', launcher)
+        self.assertIn('if (WaitForZenShutdown(root)) TryPostExitCleanup(root);', launcher)
+        self.assertLess(launcher.index('child.WaitForExit();'),
+                        launcher.rindex('if (WaitForZenShutdown(root)) TryPostExitCleanup(root);'))
+        self.assertIn('All zen.exe processes closed and remained absent', launcher)
+
+    def test_launcher_does_not_end_browser_processes(self):
+        launcher = (ROOT / 'builder/ZenBrowserPortable.cs').read_text(encoding='utf-8')
+        shutdown = launcher.split('private static bool WaitForZenShutdown', 1)[1].split('private static void EnsurePortablePreferences', 1)[0]
+        self.assertNotIn('.Kill()', shutdown)
+        self.assertNotIn('TerminateProcess', shutdown)
+        self.assertIn('return false;', shutdown)
+
     def test_no_automatic_programdata_deletion_without_exact_approval(self):
         cleanup = (ROOT / 'builder/ZenUpdateCleanup.ps1').read_text(encoding='utf-8-sig')
         self.assertIn("Log 'Updater cleanup is OFF (no approved folder). Verified shortcut cleanup finished.'", cleanup)

@@ -69,6 +69,56 @@ internal static class ZenBrowserPortable
         }
     }
 
+    // The initial zen.exe process may exit while other Zen processes are still
+    // loading or while the actual browser remains open. Waiting only for that
+    // initial PID caused cleanup to run during the browsing session.
+    // Match the PowerShell helper's conservative safety rule: do not clean host
+    // files while ANY zen.exe is active. Never forcibly stop browser processes.
+    // Unlike the short helper safety timeout, keep this launcher waiting for
+    // the user's normal browser shutdown (which may take hours).
+    private static bool WaitForZenShutdown(string root)
+    {
+        int quietChecks = 0;
+        int elapsedSeconds = 0;
+        bool reported = false;
+        while (quietChecks < 5)
+        {
+            Process[] active;
+            try
+            {
+                active = Process.GetProcessesByName("zen");
+            }
+            catch (Exception ex)
+            {
+                LogLauncher(root, "SKIP: could not check Zen processes safely: " + ex.Message);
+                return false;
+            }
+
+            int count = active.Length;
+            foreach (Process process in active) process.Dispose();
+            if (count == 0)
+            {
+                quietChecks++;
+            }
+            else
+            {
+                quietChecks = 0;
+                if (!reported || elapsedSeconds % 60 == 0)
+                {
+                    LogLauncher(root, "Zen still has " + count +
+                        " running process(es). Waiting for browser to fully close; no cleanup yet.");
+                    reported = true;
+                }
+            }
+
+            if (quietChecks >= 5) break;
+            System.Threading.Thread.Sleep(1000);
+            elapsedSeconds++;
+        }
+        LogLauncher(root, "All zen.exe processes closed and remained absent; starting safe cleanup.");
+        return true;
+    }
+
     // Best-effort: these preferences discourage Windows shortcut integration.
     // Zen/Firefox can still create shortcuts on some builds: the post-exit
     // verifier remains essential. Never turn off Private Browsing itself.
@@ -166,9 +216,10 @@ internal static class ZenBrowserPortable
                         }
                         finally
                         {
-                            // Runs automatically even if waiting for Zen raises an error.
-                            // The PowerShell helper separately refuses cleanup while Zen runs.
-                            TryPostExitCleanup(root);
+                            // Wait for ALL Zen processes, not just the first launched PID.
+                            // May stay active until the user's actual browser session ends.
+                            // The PowerShell helper still rechecks before deleting anything.
+                            if (WaitForZenShutdown(root)) TryPostExitCleanup(root);
                         }
                     }
                 }

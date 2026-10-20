@@ -10,8 +10,8 @@ The root launcher automatically:
 
 1. Applies shortcut-prevention settings **before** the browser starts, preserving and backing up an existing `Data\Profile\user.js` when it changes.
 2. Launches Zen with the saved browser profile under `Data\Profile` and temporary files under `Data\Temp`.
-3. Waits until the main Zen process has closed. The cleanup helper checks for any remaining `zen.exe` processes before touching host files.
-4. Runs `Other\ZenUpdateCleanup.ps1` silently after exit. It backs up and removes only verified Start Menu links that belong to this portable Zen. If updater cleanup was already approved, it also removes only the approved updater remnants.
+3. Waits for the main Zen process **and every remaining `zen.exe` process** to close, then confirms the process list stays clear for several seconds. The launcher remains active while the browser is open. This fixes the early cleanup attempt after only the first process exits.
+4. Runs `Other\ZenUpdateCleanup.ps1` silently **only after all Zen processes are gone**. It backs up and removes only verified Start Menu links that belong to this portable Zen. If updater cleanup was already approved, it also removes only the approved updater remnants.
 5. Writes `Data\UpdaterCleanup\launcher.log` (automation record) and `Data\UpdaterCleanup\cleanup.log` (individual cleanup results).
 
 **Previously approved updater folder:** Approval is stored in your existing `Data\UpdaterCleanup\approved-update-folder.txt`. **Keep your current Data folder** on upgrades to retain that approval and all browser settings; then there are **no manual scripts to run at every launch**.
@@ -64,3 +64,7 @@ Official releases: https://github.com/zen-browser/desktop/releases
 Zen project: https://github.com/zen-browser/desktop
 
 For historical troubleshooting notes, see `TECHNICAL-HISTORY.md`.
+
+### Important: exit timing fix (October 20, 2026)
+
+Previous launchers waited only for the initial Zen PID, then tried cleanup after 18 seconds even if other Zen processes remained. This build waits for **all** `zen.exe` processes to close and stay absent briefly before launching the cleanup helper. Other installed Zen instances will also prevent cleanup until closed, matching the helper's safety check. Do not kill Zen processes just to force cleanup. After replacing the launcher, check `Data\UpdaterCleanup\launcher.log` for the line `All zen.exe processes closed and remained absent; starting safe cleanup.` and `cleanup.log` for actual cleanup results. For testing, the new compiled launcher is required: replacing `Other` alone cannot fix the old executable.

@@ -31,3 +31,10 @@ Never run the browser directly from App\Zen\zen.exe.
 
 NOTE: The ZIP you are reading now contains the builder source, NOT the Zen browser.
 The manual GitHub Actions workflow produces the actual self-contained portable ZIP.
+
+IMPORTANT OCT 20 LAUNCHER FIX:
+The previous launcher stopped waiting at the first Zen PID and cleanup skipped after
+18 seconds because more Zen processes were still open. The corrected root launcher
+waits until EVERY zen.exe process closes, then cleans automatically. You MUST
+replace the root ZenBrowserPortable.exe from the NEW GitHub build; updating the
+PowerShell scripts alone does not fix the old launcher.
