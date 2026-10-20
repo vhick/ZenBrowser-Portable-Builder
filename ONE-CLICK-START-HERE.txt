@@ -1,0 +1,33 @@
+ZEN BROWSER PORTABLE — FINAL ONE-CLICK VERSION
+
+AFTER YOU BUILD IT:
+Just double-click ZenBrowserPortable.exe.
+That's it. It automatically applies startup preferences and runs cleanup when Zen closes.
+No scripts should be opened manually during normal use.
+
+BUILD ON GITHUB (ONE TIME PER NEW ZEN VERSION):
+1) Extract this builder kit on your computer.
+2) Open your Zen Portable builder repository in GitHub Desktop.
+3) Copy the extracted contents, including .github, into the cloned repository folder.
+4) Commit and Push origin.
+5) On GitHub open Actions -> Build Zen Browser Portable ZIP (Manual) -> Run workflow.
+6) Download the artifact and extract its inner ZenBrowser-...-Portable.zip.
+7) For a first installation use the resulting ZenBrowserPortable folder.
+   To upgrade, BACK UP and KEEP your original Data folder; replace only App, Other,
+   and ZenBrowserPortable.exe. Do NOT replace Data.
+
+AUTOMATIC BEHAVIOR:
+- Before Zen: startup preferences applied to Data\Profile\user.js.
+- During Zen: profile in Data\Profile, temporary files in Data\Temp.
+- On exit: verified Start Menu shortcuts removed automatically.
+- Also on exit: previously approved ProgramData updater remnants removed safely.
+- Logs: Data\UpdaterCleanup\launcher.log and cleanup.log.
+
+ONE-TIME EXCEPTION FOR A FRESH PC:
+Only if there is no prior approval saved in Data and you WANT ProgramData updater
+cleanup, close Zen and use Other\Enable-Zen-Cleanup.cmd once to approve the exact
+Zen Update Folder shown by about:support. Normal future launches need no scripts.
+Never run the browser directly from App\Zen\zen.exe.
+
+NOTE: The ZIP you are reading now contains the builder source, NOT the Zen browser.
+The manual GitHub Actions workflow produces the actual self-contained portable ZIP.

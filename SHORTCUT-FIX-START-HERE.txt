@@ -1,0 +1,34 @@
+ZEN BROWSER PORTABLE - SHORTCUT PREVENTION / CLEANUP UPDATE
+
+A) EXISTING PORTABLE INSTALLATION (no GitHub build required)
+
+1. CLOSE Zen. In Task Manager Details check no zen.exe exists.
+2. BACK UP your whole ZenBrowserPortable\Data folder.
+3. Extract the separate small ZIP into your current ZenBrowserPortable folder,
+   replacing matching files in Other ONLY. Do not touch App or Data.
+4. Run Other\APPLY-STARTUP-FIX.cmd ONCE to update Data\Profile\user.js.
+5. Run Other\CLEAN-ZEN-NOW.cmd to remove the existing verified Start Menu links.
+6. Launch ZenBrowserPortable.exe, close Zen normally, then read
+   Data\UpdaterCleanup\cleanup.log.
+
+The current pre-fix root launcher triggers automatic cleanup only if you have
+previously approved the exact updater folder; your last log shows you had.
+For guaranteed automatic *attempts* to clean verified shortcuts even WITHOUT
+that approval, update to the new root launcher from a GitHub rebuild (below).
+
+B) FUTURE GITHUB BUILDS
+
+1. Put the FULL builder ZIP contents into your own builder repository; keep
+   .github and builder folders. Commit and push.
+2. Actions > Build Zen Browser Portable ZIP (Manual) > Run workflow.
+3. After build, CLOSE Zen and back up existing Data.
+4. Replace the App and Other folders and root ZenBrowserPortable.exe from the
+   newly built portable ZIP; PRESERVE your existing Data intact.
+
+The preference adjustment is best-effort. Recent Firefox versions may still
+write shortcuts on the first start even when preferences are false.
+The post-exit cleaner deletes ONLY exact .lnk files with verified targets in
+THIS portable folder; updater files still require explicit opt-in.
+There is no need to run the original Zen installer and no need for admin rights.
+
+None of these new changes has been run on your Windows machine yet.
