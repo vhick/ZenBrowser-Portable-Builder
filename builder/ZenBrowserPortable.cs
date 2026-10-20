@@ -1,0 +1,185 @@
+// Zen Browser Portable - community launcher. Compatible with Windows .NET Framework 4.x.
+// Keep user profile in sibling Data folder; never launch App/Zen/zen.exe directly.
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows.Forms;
+
+internal static class ZenBrowserPortable
+{
+    // Lightweight, local evidence that the root launcher handled each phase.
+    // Log failures must NEVER prevent the browser from starting or closing.
+    private static void LogLauncher(string root, string message)
+    {
+        try
+        {
+            string dir = Path.Combine(root, @"Data\UpdaterCleanup");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "launcher.log"),
+                "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + message + Environment.NewLine,
+                new UTF8Encoding(false));
+        }
+        catch (Exception) { /* Optional diagnostics only. */ }
+    }
+
+    // Automatically clean shortcuts that point to THIS portable installation.
+    // Optional ProgramData updater cleanup still requires exact-folder approval
+    // once per Windows setup. Never elevate or delete unknown Mozilla files.
+    private static void TryPostExitCleanup(string root)
+    {
+        string script = Path.Combine(root, @"Other\ZenUpdateCleanup.ps1");
+        if (!File.Exists(script))
+        {
+            LogLauncher(root, "SKIP: cleanup helper is missing; install the complete build.");
+            return;
+        }
+        try
+        {
+            string powerShell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                @"System32\WindowsPowerShell\v1.0\powershell.exe");
+            var psi = new ProcessStartInfo(powerShell);
+            psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script +
+                "\" -Mode Clean -Root \"" + root + "\"";
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            LogLauncher(root, "Automatic post-exit cleanup started.");
+            using (Process cleaner = Process.Start(psi))
+            {
+                if (cleaner == null)
+                {
+                    LogLauncher(root, "SKIP: Windows did not start the cleanup process.");
+                    return;
+                }
+                if (!cleaner.WaitForExit(90000))
+                {
+                    LogLauncher(root, "WARNING: cleanup exceeded 90 seconds; terminating helper.");
+                    cleaner.Kill();
+                    cleaner.WaitForExit();
+                }
+                LogLauncher(root, "Automatic cleanup finished (exit code " + cleaner.ExitCode +
+                    "). See cleanup.log for individual paths.");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogLauncher(root, "WARNING: cleanup did not complete: " + ex.Message);
+        }
+    }
+
+    // Best-effort: these preferences discourage Windows shortcut integration.
+    // Zen/Firefox can still create shortcuts on some builds: the post-exit
+    // verifier remains essential. Never turn off Private Browsing itself.
+    private static void EnsurePortablePreferences(string root, string profile)
+    {
+        string userJs = Path.Combine(profile, "user.js");
+        string contents = File.Exists(userJs) ? File.ReadAllText(userJs) :
+            "// Zen Portable profile defaults. Preserve this file inside Data.\r\n" +
+            "user_pref(\"browser.shell.checkDefaultBrowser\", false);\r\n" +
+            "user_pref(\"app.update.auto\", false);\r\n" +
+            "user_pref(\"app.update.enabled\", false);\r\n";
+        string original = contents;
+        foreach (string preference in new string[] {
+            "browser.shell.customIcon.enabled", "browser.privacySegmentation.enabled"
+        })
+        {
+            // Replace only the named user_pref line; do not replace or erase
+            // any unrelated preferences, bookmarks, sessions or extensions.
+            string pattern = @"(?m)^[ \t]*user_pref\([ \t]*""" +
+                Regex.Escape(preference) + @"""[ \t]*,[ \t]*(?:true|false)[ \t]*\);[ \t]*\r?\n?";
+            contents = Regex.Replace(contents, pattern, "");
+            contents = contents.TrimEnd('\r', '\n') + "\r\n" +
+                "user_pref(\"" + preference + "\", false);\r\n";
+        }
+        if (File.Exists(userJs) && contents == original) return;
+        if (File.Exists(userJs))
+        {
+            string backups = Path.Combine(root, @"Data\UpdaterCleanup\Backups");
+            Directory.CreateDirectory(backups);
+            string dest = Path.Combine(backups, "user.js.before-shortcut-fix-" +
+                DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".bak");
+            File.Copy(userJs, dest, false);
+        }
+        File.WriteAllText(userJs, contents, new UTF8Encoding(false));
+    }
+
+    [STAThread]
+    private static int Main(string[] args)
+    {
+        string root = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        string exe = Path.Combine(root, @"App\Zen\zen.exe");
+        string profile = Path.Combine(root, @"Data\Profile");
+        string temp = Path.Combine(root, @"Data\Temp");
+        try
+        {
+            if (!File.Exists(exe))
+            {
+                MessageBox.Show("Missing App\\Zen\\zen.exe. Please extract the whole ZIP.",
+                    "Zen Browser Portable", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 2;
+            }
+            if (args.Length > 0)
+            {
+                // Arbitrary startup switches could override --profile or update policy.
+                MessageBox.Show("This launcher does not accept command-line arguments. Open URLs inside Zen.",
+                    "Zen Browser Portable", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 3;
+            }
+            Directory.CreateDirectory(profile);
+            Directory.CreateDirectory(temp);
+            // One active portable launcher to reduce conflicting write access to the profile.
+            using (var gate = new System.Threading.Mutex(false, @"Local\ZenBrowserPortable_Community_Launcher"))
+            {
+                bool owns = false;
+                try
+                {
+                    try { owns = gate.WaitOne(0); }
+                    catch (System.Threading.AbandonedMutexException) { owns = true; }
+                    if (!owns)
+                    {
+                        MessageBox.Show("A Zen Browser Portable launcher is already running. Close it first.",
+                            "Zen Browser Portable", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return 4;
+                    }
+                    // Apply settings after the single-instance lock is held.
+                    EnsurePortablePreferences(root, profile);
+                    LogLauncher(root, "Startup preferences checked; starting portable Zen.");
+                    var psi = new ProcessStartInfo(exe);
+                    psi.UseShellExecute = false;
+                    psi.WorkingDirectory = Path.GetDirectoryName(exe);
+                    psi.Arguments = "--no-remote --profile \"" + profile + "\"";
+                    psi.EnvironmentVariables["TEMP"] = temp;
+                    psi.EnvironmentVariables["TMP"] = temp;
+                    psi.EnvironmentVariables["MOZ_CRASHREPORTER_DISABLE"] = "1";
+                    // No global PATH, registry or default-browser modifications.
+                    using (Process child = Process.Start(psi))
+                    {
+                        if (child == null) throw new InvalidOperationException("Could not launch Zen.");
+                        LogLauncher(root, "Portable Zen started (PID " + child.Id + ").");
+                        try
+                        {
+                            child.WaitForExit();
+                            LogLauncher(root, "Portable Zen exited (code " + child.ExitCode + ").");
+                            return child.ExitCode;
+                        }
+                        finally
+                        {
+                            // Runs automatically even if waiting for Zen raises an error.
+                            // The PowerShell helper separately refuses cleanup while Zen runs.
+                            TryPostExitCleanup(root);
+                        }
+                    }
+                }
+                finally { if (owns) gate.ReleaseMutex(); }
+            }
+        }
+        catch (Exception exc)
+        {
+            LogLauncher(root, "ERROR: launcher failed: " + exc.Message);
+            MessageBox.Show(exc.Message, "Zen Browser Portable error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+    }
+}

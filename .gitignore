@@ -1,0 +1,19 @@
+# Never commit personal browser profile data or build outputs
+Data/
+**/Data/
+Profile/
+**/Profile/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+logins.json
+key4.db
+cookies.sqlite
+places.sqlite
+artifacts/
+build-temp/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.zip
+*.exe
