@@ -55,7 +55,7 @@ Back up the **entire** `ZenBrowserPortable` folder before reinstalling Windows. 
 
 * The builder fetches the chosen official Zen tag, verifies release SHA-256, extracts official binaries, and reuses the official icon.
 * Microsoft .NET Framework 4.x C# launcher compiles on GitHub's Windows runner.
-* The builder compiles and runs a CityHash64 self-test before compiling the launcher. CityHash matches Google public reference vectors.
+* The builder compiles and runs a CityHash64 self-test before compiling the launcher. CityHash is tested against Mozilla-compatible reference values, including its documented Firefox installation hash.
 * Mozilla `GetInstallHash` hashes the resolved install directory using CityHash64 over UTF-16LE bytes. Cached `TaskBarIDs` entries matching the *exact installation path* are honored.
 * The calculated installation path may not precisely match Mozilla's resolved junction/casing or an old cached hash. In these cases, cleanup is deliberately conservative.
 * Sources: https://github.com/HasNetwork/zen-browser-portable, https://github.com/google/cityhash, https://firefox-admin-docs.mozilla.org/reference/policies/disableappupdate/, https://raw.githubusercontent.com/mozilla-firefox/firefox/main/toolkit/xre/nsXREDirProvider.cpp
@@ -69,3 +69,14 @@ Back up the **entire** `ZenBrowserPortable` folder before reinstalling Windows. 
 - To avoid overwriting another Zen installation's active settings, the launcher refuses to run while an unrelated Zen process is open.
 - Incomplete sessions (power loss, forced kill, crash) are **not** automatically rolled back later, because later changes to a host registry may belong to other applications. Backups are retained for diagnosis.
 - This preview has not been tested on a clean Windows VM, so do **not** claim it is certified trace-free.
+
+## 2026-10-20 updater-ID correction (Windows test candidate)
+
+The previous builder used CityHash64 v1.1+ short-string formulas; Mozilla's legacy
+installation IDs require the older v1.0.3 formulas (reference:
+`C:\Program Files\Mozilla Firefox` -> `308046B0AF4A39CB`). The hash now
+uses those formulas, resolves the real on-disk directory with Win32, and looks
+in both registry views for exact-path TaskBarIDs. This patch deliberately does
+**not** hardcode a computer-specific hash or remove unidentified updater folders.
+If the log still shows an ID different from `about:support`, stop and share the
+updated `launcher.log` and `cleanup.log`. This source has not been run on Windows.

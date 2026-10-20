@@ -103,7 +103,7 @@ $hashTest = Join-Path $work 'hash-test.exe'
 & $compiler /nologo /target:exe "/out:$hashTest" (Join-Path $repo 'builder\InstallHash.cs') (Join-Path $repo 'builder\hash_test.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Install hash test compilation failed' }
 & $hashTest
-if ($LASTEXITCODE -ne 0) { throw 'CityHash64 reference vectors did not match' }
+if ($LASTEXITCODE -ne 0) { throw 'Mozilla CityHash64 install-hash reference vectors did not match' }
 & $compiler /nologo /target:winexe "/out:$launcher" "/win32icon:$ico" /reference:System.Windows.Forms.dll $cs (Join-Path $repo 'builder\InstallHash.cs')
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcher)) { throw 'Failed to compile Zen portable launcher' }
 
@@ -130,7 +130,7 @@ First launch on a different PC: no updater approval or activation step.
 The browser uses Data\Profile and child-only APPDATA/LOCALAPPDATA/TEMP redirection.
 After browser shutdown it checks recognized, current-install updater files, verified shortcuts,
 and restores the Zen-specific current-user registry branch to its pre-launch state.
-The current installer ID is calculated locally (Mozilla CityHash64 of Zen directory).
+The current ID is obtained from Mozilla-style TaskBarIDs caches (both registry views), or CityHash64 v1.0.3 of the resolved directory.
 It never recursively removes Mozilla folders, never elevates, and always skips unfamiliar files.
 Mozilla registry cached installation IDs are checked HKLM then HKCU before CityHash fallback.
 If the ID still differs from Zen's internal ID, cleanup safely leaves uncertain files.

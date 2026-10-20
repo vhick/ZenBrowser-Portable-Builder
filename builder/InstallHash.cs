@@ -20,6 +20,8 @@ using System;
 using System.IO;
 using System.Text;
 using Microsoft.Win32;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 internal static class InstallHash
 {
@@ -43,17 +45,30 @@ internal static class InstallHash
     internal static ulong CityHash64(byte[] s) {
       unchecked {
        int n=s.Length;
+       // Mozilla's installation-hash implementation uses the v1.0.3 CityHash64
+       // short-input formulas. Google's current CityHash v1.1+ produces DIFFERENT
+       // hashes for <= 64 bytes, so it must not be used for installation IDs.
        if(n<=16) {
-         if(n>=8) { ulong mul=K2+(ulong)n*2, a=F64(s,0)+K2,b=F64(s,n-8); return H(R(b,37)*mul+a,(R(a,25)+b)*mul,mul); }
-         if(n>=4) return H((ulong)n+(F32(s,0)<<3),F32(s,n-4),K2+(ulong)n*2);
-         if(n>0) { ulong y=(ulong)s[0]+((ulong)s[n/2]<<8),z=(ulong)n+((ulong)s[n-1]<<2); return M(y*K2 ^ z*K0)*K2; }
+         if(n>8) { ulong a=F64(s,0),b=F64(s,n-8);
+           return H(a,R(b+(ulong)n,n))^b; }
+         if(n>=4) return H((ulong)n+(F32(s,0)<<3),F32(s,n-4));
+         if(n>0) { ulong y=(ulong)s[0]+((ulong)s[n/2]<<8),z=(ulong)n+((ulong)s[n-1]<<2);
+           return M(y*K2 ^ z*0xc949d7c7509e6557UL)*K2; }
          return K2;
        }
-       if(n<=32) { ulong mul=K2+(ulong)n*2,a=F64(s,0)*K1,b=F64(s,8),c=F64(s,n-8)*mul,d=F64(s,n-16)*K2;
-         return H(R(a+b,43)+R(c,30)+d,a+R(b+K2,18)+c,mul); }
-       if(n<=64) { ulong mul=K2+(ulong)n*2,a=F64(s,0)*K2,b=F64(s,8),c=F64(s,n-24),d=F64(s,n-32),e=F64(s,16)*K2,f=F64(s,24)*9,g=F64(s,n-8),h=F64(s,n-16)*mul;
-         ulong u=R(a+g,43)+(R(b,30)+c)*9,v=((a+g)^d)+f+1,w=Swap((u+v)*mul)+h,x=R(e+f,42)+c,y=(Swap((v+w)*mul)+g)*mul,z=e+f+c;
-         a=Swap((x+z)*mul+y)+b; b=M((z+a)*mul+d+h)*mul; return b+x; }
+       if(n<=32) { ulong a=F64(s,0)*K1,b=F64(s,8),c=F64(s,n-8)*K2,d=F64(s,n-16)*K0;
+         return H(R(a-b,43)+R(c,30)+d,a+R(b^0xc949d7c7509e6557UL,20)-c+(ulong)n); }
+       if(n<=64) {
+         ulong z=F64(s,24),a=F64(s,0)+((ulong)n+F64(s,n-16))*K0;
+         ulong b=R(a+z,52),c=R(a,37);
+         a+=F64(s,8);c+=R(a,7);a+=F64(s,16);
+         ulong vf=a+z,vs=b+R(a,31)+c;
+         a=F64(s,16)+F64(s,n-32);z=F64(s,n-8);b=R(a+z,52);c=R(a,37);
+         a+=F64(s,n-24);c+=R(a,7);a+=F64(s,n-16);
+         ulong wf=a+z,ws=b+R(a,31)+c;
+         ulong r=M((vf+ws)*K2+(wf+vs)*K0);
+         return M(r*K0+vs)*K2;
+       }
        ulong X=F64(s,n-40),Y=F64(s,n-16)+F64(s,n-56),Z=H(F64(s,n-48)+(ulong)n,F64(s,n-24));
        ulong v0,v1,w0,w1; Weak(s,n-64,(ulong)n,Z,out v0,out v1); Weak(s,n-32,Y+K1,X,out w0,out w1); X=X*K1+F64(s,0);
        int off=0,len=(n-1)&~63;
@@ -66,26 +81,61 @@ internal static class InstallHash
        return H(H(v0,w0)+M(Y)*K1+Z,H(v1,w1)+X);
       }
     }
+    // Resolve the actual case and linked-directory target as Mozilla does
+    // before hashing on Windows. Never trust guessed hashes for file deletion.
+    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+    [DllImport("kernel32.dll", EntryPoint="CreateFileW", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern SafeFileHandle CreateDirectoryHandle(string filename,
+        uint access, FileShare share, IntPtr security, uint creation, uint flags,
+        IntPtr template);
+    [DllImport("kernel32.dll", EntryPoint="GetFinalPathNameByHandleW", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern uint GetFinalPathName(SafeFileHandle handle,
+        StringBuilder result, uint size, uint flags);
+
+    internal static string RealDirectory(string path) {
+        string original = Path.GetFullPath(path).TrimEnd('\\');
+        try {
+            using(SafeFileHandle handle=CreateDirectoryHandle(original, 0,
+                    FileShare.ReadWrite|FileShare.Delete, IntPtr.Zero, 3,
+                    FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero)) {
+                if(handle==null || handle.IsInvalid) return original;
+                StringBuilder result=new StringBuilder(32768);
+                uint written=GetFinalPathName(handle,result,(uint)result.Capacity,0);
+                if(written==0 || written>=result.Capacity) return original;
+                string real=result.ToString();
+                if(real.StartsWith(@"\\?\UNC\",StringComparison.OrdinalIgnoreCase))
+                    real=@"\\"+real.Substring(8);
+                else if(real.StartsWith(@"\\?\",StringComparison.OrdinalIgnoreCase))
+                    real=real.Substring(4);
+                if(!Path.IsPathRooted(real)) return original;
+                return Path.GetFullPath(real).TrimEnd('\\');
+            }
+        } catch { return original; }
+    }
+
     internal static string ForDirectory(string path) {
-       // Compare Mozilla's installation path hash; never use this for security verification.
-       string dir=Path.GetFullPath(path).TrimEnd('\\');
-       // Mozilla can use a previously cached per-installation hash. Only accept exact path keys.
-       // Match Mozilla's implementation: HKLM cached ID takes precedence over HKCU.
-       // The name is the exact installation path, never a guessed Zen Installer subkey.
-       foreach (RegistryKey hive in new RegistryKey[] { Registry.LocalMachine, Registry.CurrentUser }) {
-          try {
-             using(RegistryKey taskIds=hive.OpenSubKey(@"SOFTWARE\Mozilla\Zen\TaskBarIDs", false)) {
-                if(taskIds==null) continue;
-                foreach(string key in taskIds.GetValueNames()) {
-                   if(!string.Equals(key,dir,StringComparison.OrdinalIgnoreCase)) continue;
-                   if(taskIds.GetValueKind(key)!=RegistryValueKind.String) continue;
-                   string result=taskIds.GetValue(key) as string;
-                   if(!string.IsNullOrEmpty(result) &&
-                      System.Text.RegularExpressions.Regex.IsMatch(result,@"\A[0-9A-Fa-f]{1,16}\z"))
-                      return result.ToUpperInvariant();
-                }
-             }
-          } catch { /* Do not infer ownership from inaccessible registry data. */ }
+       string dir=RealDirectory(path);
+       // Same priority as Mozilla's Windows code: machine cache before user.
+       // Inspect both views because the registry's 32/64-bit view can differ.
+       foreach(RegistryHive hive in new RegistryHive[] {
+            RegistryHive.LocalMachine,RegistryHive.CurrentUser }) {
+          foreach(RegistryView view in new RegistryView[] {
+                RegistryView.Registry64,RegistryView.Registry32 }) {
+             try {
+               using(RegistryKey baseKey=RegistryKey.OpenBaseKey(hive,view))
+               using(RegistryKey ids=baseKey.OpenSubKey(@"SOFTWARE\Mozilla\Zen\TaskBarIDs",false)) {
+                 if(ids==null) continue;
+                 foreach(string key in ids.GetValueNames()) {
+                    if(!string.Equals(key,dir,StringComparison.OrdinalIgnoreCase)) continue;
+                    if(ids.GetValueKind(key)!=RegistryValueKind.String) continue;
+                    string val=ids.GetValue(key) as string;
+                    if(!string.IsNullOrEmpty(val) &&
+                       System.Text.RegularExpressions.Regex.IsMatch(val,@"\A[0-9a-fA-F]{1,16}\z"))
+                       return val.ToUpperInvariant();
+                 }
+               }
+             } catch { /* Never broaden deletion after an inaccessible key. */ }
+          }
        }
        return CityHash64(Encoding.Unicode.GetBytes(dir)).ToString("X16");
     }

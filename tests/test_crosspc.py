@@ -37,6 +37,13 @@ class CrossPcBuilderTests(unittest.TestCase):
         self.assertIn('SOFTWARE\\Mozilla\\Zen\\TaskBarIDs',self.hash)
         self.assertIn('OrdinalIgnoreCase',self.hash)
         self.assertIn('CityHash64 vectors: PASS', (ROOT/'builder/hash_test.cs').read_text())
+    def test_mozilla_native_case_resolved_and_old_cityhash(self):
+        self.assertIn('GetFinalPathNameByHandleW',self.hash)
+        self.assertIn('RegistryView.Registry64',self.hash)
+        self.assertIn('RegistryView.Registry32',self.hash)
+        self.assertIn('return M(r*K0+vs)*K2;',self.hash)
+        self.assertIn('308046B0AF4A39CB',(ROOT/'builder/hash_test.cs').read_text())
+        self.assertIn('InstallHash.RealDirectory',self.launch)
     def test_hash_selftest_runs_before_winexe_compile(self):
         self.assertLess(self.build.index('& $hashTest'),self.build.index('/target:winexe'))
         self.assertIn('builder\\InstallHash.cs',self.build)
@@ -64,8 +71,8 @@ class CrossPcBuilderTests(unittest.TestCase):
         self.assertNotIn('HKEY_LOCAL_MACHINE',self.registry)
         self.assertIn("ZenRegistryGuard.ps1",self.build)
     def test_hash_uses_hklm_then_hkcu(self):
-        a=self.hash.index('Registry.LocalMachine')
-        b=self.hash.index('Registry.CurrentUser',a)
+        a=self.hash.index('RegistryHive.LocalMachine')
+        b=self.hash.index('RegistryHive.CurrentUser',a)
         self.assertLess(a,b)
         self.assertIn('TaskBarIDs',self.hash)
         self.assertIn('RegistryValueKind.String',self.hash)

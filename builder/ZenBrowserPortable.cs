@@ -263,7 +263,7 @@ internal static class ZenBrowserPortable
                     registryOutstanding = true;
                     // Apply settings after the single-instance lock is held.
                     EnsurePortablePreferences(root, profile);
-                    LogLauncher(root, "Portable setup automatic; updater ID " + installHash + "; starting Zen.");
+                    LogLauncher(root, "Portable setup automatic; normalized install directory " + InstallHash.RealDirectory(Path.GetDirectoryName(exe)) + "; updater ID " + installHash + "; starting Zen.");
                     var psi = new ProcessStartInfo(exe);
                     psi.UseShellExecute = false;
                     psi.WorkingDirectory = Path.GetDirectoryName(exe);
