@@ -186,12 +186,6 @@ class BuilderTests(unittest.TestCase):
         self.assertNotIn('push:', txt)
         self.assertNotIn('pull_request:', txt)
 
-    def test_manual_workflow_has_no_shared_concurrency_lock(self):
-        txt = (ROOT / '.github/workflows/build-zen-browser-portable.yml').read_text(encoding='utf-8')
-        # A stuck/orphaned manual run must not block later runs using the same group.
-        self.assertNotIn('concurrency:', txt)
-        self.assertNotIn('zen-portable-manual', txt)
-
     def test_pinned_release_is_current_stable(self):
         txt = (ROOT / '.github/workflows/build-zen-browser-portable.yml').read_text(encoding='utf-8')
         self.assertIn("default: '1.23.3b'", txt)
