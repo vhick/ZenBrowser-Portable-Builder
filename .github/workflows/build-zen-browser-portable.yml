@@ -20,10 +20,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: zen-portable-manual
-  cancel-in-progress: false
-
 jobs:
   portable-zip:
     runs-on: windows-latest
