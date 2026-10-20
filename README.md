@@ -80,3 +80,11 @@ in both registry views for exact-path TaskBarIDs. This patch deliberately does
 **not** hardcode a computer-specific hash or remove unidentified updater folders.
 If the log still shows an ID different from `about:support`, stop and share the
 updated `launcher.log` and `cleanup.log`. This source has not been run on Windows.
+
+## 2026-10-20 — automatic ProgramData session tracker candidate
+
+The root launcher now runs `Other/ZenProgramDataTracker.ps1` automatically before Zen and after all Zen processes exit. It inventories only `ProgramData\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38` and pairs newly observed 16-character hex updater folders with newly observed same-ID zero-byte locks. A candidate is accepted only when **one** exact new pair appears, its folder has a strict allowlisted structure including `update-config.json`, no other Mozilla-related process is detected at the endpoints, and no linked folders are involved. Actual deletion/backup remains exclusively in the existing `ZenUpdateCleanup.ps1` safety-controlled helper; the tracker is read-only.
+
+**Important safety limitation:** filesystem differences do not prove which process wrote the files. If another Firefox/Thunderbird instance changes files during the session, a snapshot can be misleading; users who require process-level attribution should capture a diagnostic Procmon trace. Old hash folders already present before the first tracked session (including the previously seen `635D...` folder) are **not** automatically claimed or deleted. This is intentional to protect installed browsers and Thunderbird.
+
+Logs: `Data\UpdaterCleanup\ProgramDataTracker\tracker.log`, plus regular `launcher.log` and `cleanup.log`. Keep `Data` during upgrades. The source/test ZIP is not a Windows-validated release.

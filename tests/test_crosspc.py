@@ -14,7 +14,7 @@ class CrossPcBuilderTests(unittest.TestCase):
         cls.hash=(ROOT/'builder/InstallHash.cs').read_text()
         cls.registry=(ROOT/'builder/ZenRegistryGuard.ps1').read_text()
     def test_required_sources_exist(self):
-        for x in ['ZenBrowserPortable.cs','InstallHash.cs','hash_test.cs','ZenUpdateCleanup.ps1','ZenRegistryGuard.ps1','build_windows.ps1','verify_zip.py']:
+        for x in ['ZenBrowserPortable.cs','InstallHash.cs','hash_test.cs','ZenUpdateCleanup.ps1','ZenRegistryGuard.ps1','ZenProgramDataTracker.ps1','build_windows.ps1','verify_zip.py']:
             self.assertTrue((ROOT/'builder'/x).is_file(),x)
     def test_no_manual_approval_parameter_or_mode(self):
         self.assertNotIn("Read-Host",self.clean)
@@ -29,7 +29,7 @@ class CrossPcBuilderTests(unittest.TestCase):
         self.assertIn('Data\\Profile',self.launch)
         self.assertIn('--no-remote --profile',self.launch)
         self.assertIn('WaitForZenShutdown(root)',self.launch)
-        self.assertIn('TryPostExitCleanup(root, installHash)',self.launch)
+        self.assertIn('TryPostExitCleanup(root, cleanupId)',self.launch)
         self.assertNotIn('Process.Kill()',self.launch)
     def test_install_hash_from_actual_current_binary(self):
         self.assertIn('InstallHash.ForDirectory(Path.GetDirectoryName(exe))',self.launch)
@@ -55,6 +55,22 @@ class CrossPcBuilderTests(unittest.TestCase):
         self.assertIn('Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38',self.clean)
         self.assertIn("$allowFiles = @('update-config.json','parent.lock')",self.clean)
         self.assertIn('Backups',self.clean)
+    def test_dynamic_programdata_tracker_is_integrated(self):
+        tracker=(ROOT/'builder/ZenProgramDataTracker.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('TrackProgramData(root, "Before")',self.launch)
+        self.assertIn('trackerReady && TrackProgramData(root, "After")',self.launch)
+        self.assertIn('TrackProgramData(root, "After")',self.launch)
+        self.assertIn('TryPostExitCleanup(root, cleanupId)',self.launch)
+        self.assertIn('ZenProgramDataTracker.ps1',self.build)
+        self.assertIn('Other/ZenProgramDataTracker.ps1',(ROOT/'builder/verify_zip.py').read_text())
+        self.assertIn('new folder + zero-byte lock',tracker)
+        self.assertIn('Get-ChildItem -LiteralPath',tracker)
+        self.assertIn("$newDirs.Count -ne 1",tracker)
+        self.assertIn("$newLocks.Count -ne 1",tracker)
+        self.assertIn('update-config.json',tracker)
+        self.assertIn('NO CANDIDATE',tracker)
+        self.assertNotIn('Remove-Item -Recurse',tracker)
+        self.assertIn("'After'",tracker)
     def test_shortcuts_verify_targets(self):
         self.assertIn('Test-PortableShortcut',self.clean)
         self.assertIn('private_browsing.exe',self.clean)
@@ -89,7 +105,7 @@ class CrossPcBuilderTests(unittest.TestCase):
     def test_clean_zip_check_requires_no_profile(self):
         spec=importlib.util.spec_from_file_location('verify_zip',ROOT/'builder/verify_zip.py')
         mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
-        names=['ZenBrowserPortable.exe','App/Zen/zen.exe','App/Zen/omni.ja','App/Zen/xul.dll','App/Zen/distribution/policies.json','App/AppInfo/appinfo.ini','App/AppInfo/appicon.ico','Other/README.txt','Other/ZenUpdateCleanup.ps1','Other/ZenRegistryGuard.ps1','App/Zen/browser/chrome.manifest']+[f'App/AppInfo/appicon_{x}.png' for x in [16,32,75,128,256]]
+        names=['ZenBrowserPortable.exe','App/Zen/zen.exe','App/Zen/omni.ja','App/Zen/xul.dll','App/Zen/distribution/policies.json','App/AppInfo/appinfo.ini','App/AppInfo/appicon.ico','Other/README.txt','Other/ZenUpdateCleanup.ps1','Other/ZenRegistryGuard.ps1','Other/ZenProgramDataTracker.ps1','App/Zen/browser/chrome.manifest']+[f'App/AppInfo/appicon_{x}.png' for x in [16,32,75,128,256]]
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'x.zip'
             with zipfile.ZipFile(path,'w') as z:

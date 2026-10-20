@@ -69,6 +69,44 @@ internal static class ZenBrowserPortable
         }
     }
 
+    // Per-session ProgramData inventory. It never deletes host files and only
+    // recommends an ID after detecting a new, tightly constrained folder + lock pair.
+    private static bool TrackProgramData(string root, string mode)
+    {
+        string script = Path.Combine(root, @"Other\ZenProgramDataTracker.ps1");
+        if (!File.Exists(script)) { LogLauncher(root, "WARNING: ProgramData tracker is missing."); return false; }
+        try
+        {
+            string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                @"System32\WindowsPowerShell\v1.0\powershell.exe");
+            var psi = new ProcessStartInfo(ps);
+            psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script +
+                "\" -Mode " + mode + " -Root \"" + root + "\"";
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            using (Process helper = Process.Start(psi))
+            {
+                if (helper == null) return false;
+                if (!helper.WaitForExit(30000)) { LogLauncher(root,"WARNING: ProgramData tracker timed out."); return false; }
+                LogLauncher(root,"ProgramData tracker " + mode + " exit code " + helper.ExitCode + ".");
+                return helper.ExitCode == 0;
+            }
+        }
+        catch (Exception ex) { LogLauncher(root,"WARNING: ProgramData tracker: " + ex.Message); return false; }
+    }
+
+    private static string TrackedUpdaterId(string root)
+    {
+        try
+        {
+            string path = Path.Combine(root,@"Data\UpdaterCleanup\ProgramDataTracker\session-candidate.txt");
+            if (!File.Exists(path)) return null;
+            string id = File.ReadAllText(path).Trim();
+            return Regex.IsMatch(id,@"\A[0-9A-Fa-f]{16}\z") ? id.ToUpperInvariant() : null;
+        }
+        catch (Exception) { return null; }
+    }
+
     // Run the Windows registry guard as this user, never as administrator.
     // A pre-launch snapshot is required; the after-run restore is best-effort
     // and runs only when no Zen processes are present.
@@ -261,6 +299,10 @@ internal static class ZenBrowserPortable
                         return 7;
                     }
                     registryOutstanding = true;
+                    bool trackerReady = TrackProgramData(root, "Before");
+                    if (!trackerReady) {
+                        LogLauncher(root, "WARNING: tracker baseline unavailable; launcher will use original verified updater-ID cleanup only.");
+                    }
                     // Apply settings after the single-instance lock is held.
                     EnsurePortablePreferences(root, profile);
                     LogLauncher(root, "Portable setup automatic; normalized install directory " + InstallHash.RealDirectory(Path.GetDirectoryName(exe)) + "; updater ID " + installHash + "; starting Zen.");
@@ -291,7 +333,16 @@ internal static class ZenBrowserPortable
                             // The PowerShell helper still rechecks before deleting anything.
                             if (WaitForZenShutdown(root))
                             {
-                                try { TryPostExitCleanup(root, installHash); }
+                                try
+                                {
+                                    bool tracked = trackerReady && TrackProgramData(root, "After");
+                                    string observed = tracked ? TrackedUpdaterId(root) : null;
+                                    string cleanupId = observed ?? installHash;
+                                    if (observed != null && !string.Equals(observed,installHash,StringComparison.OrdinalIgnoreCase))
+                                        LogLauncher(root,"New verified-shape ProgramData updater candidate " + observed +
+                                            " differs from calculated ID " + installHash + "; using newly observed ID.");
+                                    TryPostExitCleanup(root, cleanupId);
+                                }
                                 finally
                                 {
                                     // Run even when updater cleanup skipped an unknown file.

@@ -109,12 +109,12 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcher)) { throw 'Failed to compi
 
 'All profile data and passwords belong here after first launch. Never upload this folder to GitHub; preserve it when updating. Browser settings are preserved; some Windows-bound sign-ins/passwords may require reauthentication.' | Set-Content (Join-Path $package 'Data\README.txt') -Encoding UTF8
 # Shortcuts: verified target; updater: exact current install hash; registry: before/after guard.
-foreach ($helper in @('ZenUpdateCleanup.ps1','ZenRegistryGuard.ps1')) {
+foreach ($helper in @('ZenUpdateCleanup.ps1','ZenRegistryGuard.ps1','ZenProgramDataTracker.ps1')) {
     Copy-Item -LiteralPath (Join-Path $repo ('builder\' + $helper)) -Destination (Join-Path $package ('Other\' + $helper)) -Force
 }
 @"
 Automatic cleanup is run by ZenBrowserPortable.exe after exit. No activation or approval scripts.
-It only inspects the Mozilla update folder belonging to the current installation hash.
+It checks the calculated updater ID and tracks NEW per-session ProgramData folder + lock pairs.
 All files removed are individually backed up. Unknown files and Thunderbird data are preserved.
 HKCU\Software\Mozilla\Zen is snapshotted before launch and restored after exit.
 Pre-existing keys remain present; host registry backup stays inside Data\HostEnvironment\Registry.
@@ -130,7 +130,7 @@ First launch on a different PC: no updater approval or activation step.
 The browser uses Data\Profile and child-only APPDATA/LOCALAPPDATA/TEMP redirection.
 After browser shutdown it checks recognized, current-install updater files, verified shortcuts,
 and restores the Zen-specific current-user registry branch to its pre-launch state.
-The current ID is obtained from Mozilla-style TaskBarIDs caches (both registry views), or CityHash64 v1.0.3 of the resolved directory.
+A read-only per-session tracker checks newly created pairs if the cached/CityHash ID differs. Existing or ambiguous folders are preserved.
 It never recursively removes Mozilla folders, never elevates, and always skips unfamiliar files.
 Mozilla registry cached installation IDs are checked HKLM then HKCU before CityHash fallback.
 If the ID still differs from Zen's internal ID, cleanup safely leaves uncertain files.
