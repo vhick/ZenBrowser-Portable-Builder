@@ -1,0 +1,160 @@
+name: Build Zen Browser Portable ZIP and PAF (Auto Latest)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Official stable tag (leave blank for latest)'
+        required: false
+        default: ''
+        type: string
+      architecture:
+        description: 'Target Windows architecture'
+        required: true
+        type: choice
+        default: x64
+        options:
+          - x64
+          - arm64
+      package_revision:
+        description: 'Installer revision; use r2 for a new release of the same upstream version'
+        required: true
+        default: r1
+        type: string
+      publish:
+        description: 'Publish ZIP and PAF to a single GitHub Release after checks pass'
+        required: true
+        type: boolean
+        default: true
+      rebuild_existing:
+        description: 'Test-build a version whose tag already exists (requires publish=false)'
+        required: true
+        type: boolean
+        default: false
+  schedule:
+    # Monday 13:17 Asia/Manila (UTC+8). Scheduled publishing is opt-in;
+    # set repository variable ZEN_SCHEDULED_PUBLISH=true AFTER a Windows test.
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zen-browser-autolatest-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: Discover verified stable version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      numeric_version: ${{ steps.resolve.outputs.numeric_version }}
+      architecture: ${{ steps.resolve.outputs.architecture }}
+      revision: ${{ steps.resolve.outputs.revision }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha256: ${{ steps.resolve.outputs.sha256 }}
+      build: ${{ steps.resolve.outputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run discovery regression tests
+        run: python3 -m unittest discover -s tests -p test_auto_latest.py -v
+      - name: Resolve stable release and protect existing tags
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.release_version }}
+          TARGET_ARCH: ${{ github.event_name == 'schedule' && 'x64' || inputs.architecture }}
+          PACKAGE_REVISION: ${{ github.event_name == 'schedule' && 'r1' || inputs.package_revision }}
+          REQUEST_PUBLISH: ${{ github.event_name == 'schedule' && 'true' || inputs.publish }}
+          REBUILD_EXISTING: ${{ github.event_name == 'schedule' && 'false' || inputs.rebuild_existing }}
+        run: |
+          python3 builder/zen_release_resolver.py \
+            --version "$REQUESTED_VERSION" \
+            --architecture "$TARGET_ARCH" \
+            --revision "$PACKAGE_REVISION" \
+            --publish "$REQUEST_PUBLISH" \
+            --rebuild-existing "$REBUILD_EXISTING"
+      - name: Explain disabled scheduled publishing
+        if: github.event_name == 'schedule' && vars.ZEN_SCHEDULED_PUBLISH != 'true' && steps.resolve.outputs.build == 'true'
+        run: |
+          echo 'A new stable version is available; packaging is intentionally paused.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'After testing a manual Zen ZIP+PAF install, set repository variable ZEN_SCHEDULED_PUBLISH=true.' >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    name: Build and verify Windows ZIP + independent PAF
+    needs: discover
+    if: needs.discover.outputs.build == 'true' && (github.event_name != 'schedule' || vars.ZEN_SCHEDULED_PUBLISH == 'true')
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Zen portable builder
+        uses: actions/checkout@v6
+      - name: Set up Python for existing icon/verification scripts
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install original builder test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install "icoextract>=0.2,<1" "Pillow>=10,<13" "pytest>=8,<10"
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependencies failed' }
+      - name: Run existing and new builder tests
+        shell: pwsh
+        run: |
+          python -m pytest tests -q
+          if ($LASTEXITCODE -ne 0) { throw 'Zen builder regression tests failed' }
+      - name: Build verified official Zen portable ZIP using existing builder
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.discover.outputs.version }}
+          TARGET_ARCH: ${{ needs.discover.outputs.architecture }}
+        run: |
+          & ./builder/build_windows.ps1 -Version $env:RELEASE_VERSION -Architecture $env:TARGET_ARCH
+          if ($LASTEXITCODE -ne 0) { throw 'Existing Zen ZIP builder failed' }
+          if (-not (Test-Path -LiteralPath 'build-temp/ZenBrowserPortable/ZenBrowserPortable.exe')) { throw 'Root launcher missing' }
+          if (-not (Test-Path -LiteralPath 'build-temp/ZenBrowserPortable/App/Zen/zen.exe')) { throw 'Zen application missing' }
+      - name: Build independent NSIS PAF from unchanged portable folder
+        id: paf
+        uses: vhick/portable-package-builder@v1.0.0
+        with:
+          source-dir: build-temp/ZenBrowserPortable
+          output-dir: artifacts
+          engine: custom-nsis
+          running-exe: 'App\Zen\zen.exe'
+          package-revision: ${{ needs.discover.outputs.revision }}
+          timeout-seconds: '1200'
+      - name: Verify ZIP, version, profile hygiene, and PAF before publishing
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.discover.outputs.version }}
+          NUMERIC_VERSION: ${{ needs.discover.outputs.numeric_version }}
+          TARGET_ARCH: ${{ needs.discover.outputs.architecture }}
+          REVISION: ${{ needs.discover.outputs.revision }}
+          OFFICIAL_SHA: ${{ needs.discover.outputs.sha256 }}
+        run: |
+          $zip = "artifacts/ZenBrowser-$env:VERSION-$env:TARGET_ARCH-Portable.zip"
+          python builder/verify_auto_package.py --root build-temp/ZenBrowserPortable --zip $zip --outdir artifacts --version $env:VERSION --architecture $env:TARGET_ARCH --sha256 $env:OFFICIAL_SHA --revision $env:REVISION
+          if ($LASTEXITCODE -ne 0) { throw 'Pre-publication package verification failed' }
+      - name: Publish both packages with shared publisher
+        if: github.event_name == 'schedule' || inputs.publish
+        uses: vhick/portable-release-publisher@v1.1.1
+        with:
+          files: |
+            artifacts/*.zip
+            artifacts/*.paf.exe
+          tag: ${{ needs.discover.outputs.tag }}
+          release-title: Zen Browser Portable ${{ needs.discover.outputs.version }} (${{ needs.discover.outputs.architecture }}, ${{ needs.discover.outputs.revision }})
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: 'false'
+      - name: Summary
+        if: always()
+        shell: pwsh
+        env:
+          TAG: ${{ needs.discover.outputs.tag }}
+        run: |
+          "Release target: $env:TAG" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          'Package verification does NOT prove clean-host portability, menu/onboarding rendering, or no Windows remnants.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

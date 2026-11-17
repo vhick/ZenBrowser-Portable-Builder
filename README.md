@@ -1,90 +1,74 @@
-# Zen Browser Portable — one-click cross-PC preview
+# Zen Browser Portable — Auto-Latest ZIP + independent PAF workflow (r1)
 
-A standalone manually-run GitHub Actions Windows portable builder, based on the existing tested user installation. This is a **test candidate**, not independently validated on a clean Windows machine.
+**Target:** https://github.com/vhick/ZenBrowser-Portable-Builder
 
-## What the build creates
+This is an **additive integration kit**. It does not replace any existing application builder files, C# launcher, cleanup scripts, original tests, or the manual ZIP workflow. The purpose is automatic stable-release discovery and ZIP+PAF publishing via your shared actions.
 
-```
-ZenBrowserPortable/
-  ZenBrowserPortable.exe     <- the only normal launcher
-  App/                       <- replace for updates
-    Zen/
-    AppInfo/
-  Data/                      <- NEVER replace on updates
-    Profile/                 <- browser settings, bookmarks, extensions, history
-    Temp/
-    HostEnvironment/
-      Roaming/
-      Local/
-    UpdaterCleanup/
-  Other/
-    ZenUpdateCleanup.ps1      <- automatic internal helper (no manual setup)
-    ZenRegistryGuard.ps1      <- automatic prelaunch registry snapshot / postexit restore
-```
+**Current checked upstream on 2026-11-17:** `1.24.2b`, official Zen stable tag. The workflow checks GitHub again whenever it runs; it does not freeze this version.
 
-## How to build
+## Includes (4 new files)
 
-1. Add this kit to your `ZenBrowser-Portable-Builder` GitHub repository, replacing previous files (delete old obsolete command helpers).
-2. In GitHub Desktop, **Commit** and **Push origin**.
-3. In GitHub, select **Actions → Build Zen Browser Portable ZIP (Manual) → Run workflow**.
-4. Download the finished `ZenBrowser-...-Portable.zip` artifact and extract it.
-5. **If updating an existing installation:** back up and KEEP your existing `Data` folder; copy only new `App`, `Other` and `ZenBrowserPortable.exe` into the existing portable directory. Never overwrite existing `Data`.
-6. Double-click **ZenBrowserPortable.exe**. No manual updater approvals, TraceGuard or cleanup commands.
+1. `.github/workflows/zen-auto-latest-zip-paf.yml` — separate Auto-Latest and independent NSIS packaging workflow.
+2. `builder/zen_release_resolver.py` — strict stable-version resolver, official asset metadata checks, and collision guard.
+3. `builder/verify_auto_package.py` — checks staged AppInfo, official SHA-256 recorded by original builder, archive version, clean portable profile, and `.paf.exe` PE file.
+4. `tests/test_auto_latest.py` — offline regression tests.
 
-## What happens automatically
+## How the auto-update works
 
-* Windows .NET launcher selects portable `Data\Profile` with `--no-remote --profile`.
-* Only the Zen child process gets redirected `TEMP`, `TMP`, `APPDATA` and `LOCALAPPDATA` environment variables. These do **not** guarantee Windows Shell folder APIs will follow them.
-* Portable browser policies disable self-update and the default-browser agent where Zen honors Firefox policies.
-* After *all* `zen.exe` processes close, the launcher invokes targeted PowerShell cleanup without a prompt. The script validates the calculated Mozilla installation hash, checks the policy, validates shortcut targets, backs up each removed file, and never recursively deletes Mozilla directories.
-* If the hash doesn't correspond to Zen's actual update root, the cleaner may **leave** updater files rather than guess a different hash. Inspect `Data\UpdaterCleanup\cleanup.log` if this happens.
-* Unknown files and data owned by Thunderbird or another Zen installation are left untouched.
+- Discovery fetches `zen-browser/desktop` `releases/latest` (or your specified official tag), rejecting drafts, GitHub prereleases, missing official digest, unexpected download URL, and wrong ZIP/installer architecture.
+- It computes `portable-v<VERSION>-zen-<ARCH>-nsis-r<N>` and checks that tag against GitHub Releases and Git refs.
+- An already complete correctly named release is skipped before Windows compilation. An incomplete/mislabeled release causes an error and a request to increase revision, preventing silent version mismatch.
+- The Windows job calls the **existing** `builder/build_windows.ps1` with the exact selected upstream version. This script already requires an official per-asset SHA-256 and creates `artifacts/ZenBrowser-<VERSION>-<ARCH>-Portable.zip` and a staging directory at `build-temp/ZenBrowserPortable`.
+- `vhick/portable-package-builder@v1.0.0` creates a community-built independent NSIS `.paf.exe`, using `App\Zen\zen.exe` for the running-application check.
+- A second verification ensures AppInfo `DisplayVersion`, numeric `PackageVersion`, recorded upstream SHA-256, ZIP-contained AppInfo, profile cleanliness, and installer file agree.
+- `vhick/portable-release-publisher@v1.1.1` publishes ZIP+PAF in **one GitHub Release** with checksums. No `actions/upload-artifact` is used by this new workflow. `prune=false`: previous releases are not deleted.
 
-## Move to another Windows PC or after reinstalling Windows
+## Expected first tag if 1.24.2b remains latest
 
-Back up the **entire** `ZenBrowserPortable` folder before reinstalling Windows. Copy it to the new system and start `ZenBrowserPortable.exe`. Your portable profile is preserved. You may have to sign back into Zen Sync, websites, and extensions, and Windows-protected saved passwords may not decrypt on the new account.
+`portable-v1.24.2b-zen-x64-nsis-r1`
 
-## Important limitations
+The ZIP file will be `ZenBrowser-1.24.2b-x64-Portable.zip`. The PAF filename is generated by the shared package builder from the `ZenBrowserPortableCommunity` AppID and numeric version (`1.24.2.0`). The publisher also produces `SHA256SUMS.txt`.
 
-* This is **not a guarantee of zero Windows remnants**. Some browser code uses Windows APIs that bypass environment variables; crash handling, default-browser integration, registry state, filesystem junctions, and OS caches need validation. The launcher now snapshots **HKCU\Software\Mozilla\Zen** before starting and restores that exact prior state after normal shutdown; it does not wipe pre-existing installed Zen data or alter HKLM. No shared Mozilla folders are deleted recursively. Interrupted sessions, concurrent installed Zen, and Windows-owned logs remain limitations.
-* Portable startup might behave differently on a fresh Windows PC and must be tested there. The next validation step is a clean-Windows VM or second computer, with Thunderbird installed as a noninterference check, using TraceGuard only for that one-time engineering test.
-* The portable profile may include private data. Don't share your `Data` folder publicly or upload it into GitHub.
-* Zen built-in update is disabled; rebuild from the official releases promptly for security updates.
+## Automatic weekly checking
 
-## Technical checks and sources
+Every **Monday 13:17 Philippine time** discovery will check for a new upstream stable release. **Scheduled publishing is deliberately gated** because this specific Zen portable implementation has not passed a clean-Windows real-life portability test and has previously produced Windows traces. By default, weekly checks run discovery only, avoiding untested automatic releases and expensive Windows compilations.
 
-* The builder fetches the chosen official Zen tag, verifies release SHA-256, extracts official binaries, and reuses the official icon.
-* Microsoft .NET Framework 4.x C# launcher compiles on GitHub's Windows runner.
-* The builder compiles and runs a CityHash64 self-test before compiling the launcher. CityHash is tested against Mozilla-compatible reference values, including its documented Firefox installation hash.
-* Mozilla `GetInstallHash` hashes the resolved install directory using CityHash64 over UTF-16LE bytes. Cached `TaskBarIDs` entries matching the *exact installation path* are honored.
-* The calculated installation path may not precisely match Mozilla's resolved junction/casing or an old cached hash. In these cases, cleanup is deliberately conservative.
-* Sources: https://github.com/HasNetwork/zen-browser-portable, https://github.com/google/cityhash, https://firefox-admin-docs.mozilla.org/reference/policies/disableappupdate/, https://raw.githubusercontent.com/mozilla-firefox/firefox/main/toolkit/xre/nsXREDirProvider.cpp
+Once you have manually confirmed a full install and safe upgrade, go to **Settings → Secrets and variables → Actions → Variables → New repository variable** and enter:
 
+- Name: `ZEN_SCHEDULED_PUBLISH`
+- Value: `true`
 
-## Registry safeguards in this preview
+With the variable set, a newly discovered stable version will build and publish automatically once per new version. Disabling or deleting the variable stops unattended publishing while preserving manual runs. Weekly schedules are approximate; GitHub may delay queued runs.
 
-- `ZenRegistryGuard.ps1` is executed automatically **Before** Zen starts and **After** all Zen processes stop. Do not run it manually.
-- It backs up existing `HKCU\Software\Mozilla\Zen` keys into `Data\HostEnvironment\Registry` and restores those keys after normal exit. If there was no key originally, it removes the newly created key.
-- It never touches `HKLM`, Thunderbird, or sibling Firefox registry branches; it does not erase keys that existed before launch.
-- To avoid overwriting another Zen installation's active settings, the launcher refuses to run while an unrelated Zen process is open.
-- Incomplete sessions (power loss, forced kill, crash) are **not** automatically rolled back later, because later changes to a host registry may belong to other applications. Backups are retained for diagnosis.
-- This preview has not been tested on a clean Windows VM, so do **not** claim it is certified trace-free.
+## Test before trusting an update
 
-## 2026-10-20 updater-ID correction (Windows test candidate)
+1. Build and publish in GitHub Actions; download the ZIP and independent `.paf.exe` from that release.
+2. Test the portable ZIP in a **fresh empty directory** on a clean Windows installation/VM; do **not** overwrite your working browser or private `Data` folder.
+3. Confirm Zen's onboarding, menus, browsing, extensions, profile persistence (`Data\Profile`), and shutdown.
+4. Check host `AppData\Roaming\zen`, `AppData\Local\zen`, Start Menu shortcuts, Windows registry, and `ProgramData\Mozilla-...` before/after. **Do not delete unknown or shared Mozilla/Thunderbird data.**
+5. Test the `.paf.exe` installer in another empty directory, then an upgrade with a nonempty `Data\Profile` and user changes. Make a backup first.
+6. Check `Data\UpdaterCleanup\launcher.log` and `cleanup.log` for leftover traces or hashes that the conservative cleanup could not attribute.
+7. Only after real Windows runtime acceptance should you set `ZEN_SCHEDULED_PUBLISH=true`.
 
-The previous builder used CityHash64 v1.1+ short-string formulas; Mozilla's legacy
-installation IDs require the older v1.0.3 formulas (reference:
-`C:\Program Files\Mozilla Firefox` -> `308046B0AF4A39CB`). The hash now
-uses those formulas, resolves the real on-disk directory with Win32, and looks
-in both registry views for exact-path TaskBarIDs. This patch deliberately does
-**not** hardcode a computer-specific hash or remove unidentified updater folders.
-If the log still shows an ID different from `about:support`, stop and share the
-updated `launcher.log` and `cleanup.log`. This source has not been run on Windows.
+**Important known limitation:** The repository's existing launcher redirects child-only `APPDATA` and `LOCALAPPDATA` and contains conservative cleanup helpers. Windows Shell APIs, Firefox/Zen updater components, and other processes can still write host files. Packaging tests and checksum verification **do not** prove zero remnants, correct onboarding/menu rendering, fully portable account credentials, or safe cleanup during an interrupted session. This workflow does not attempt to fix those behaviors or claim the application is fully portable.
 
-## 2026-10-20 — automatic ProgramData session tracker candidate
+## Controls
 
-The root launcher now runs `Other/ZenProgramDataTracker.ps1` automatically before Zen and after all Zen processes exit. It inventories only `ProgramData\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38` and pairs newly observed 16-character hex updater folders with newly observed same-ID zero-byte locks. A candidate is accepted only when **one** exact new pair appears, its folder has a strict allowlisted structure including `update-config.json`, no other Mozilla-related process is detected at the endpoints, and no linked folders are involved. Actual deletion/backup remains exclusively in the existing `ZenUpdateCleanup.ps1` safety-controlled helper; the tracker is read-only.
+- `release_version`: blank = latest official stable; optionally a specific stable tag such as `1.24.2b`.
+- `architecture`: `x64` or `arm64` (default x64; architecture is part of the release tag).
+- `package_revision`: `r1` by default; increment to `r2` if you need to publish a fixed rebuild of the same upstream version. Tag and PAF revision stay aligned.
+- `publish`: `true` sends verified packages to shared publisher; `false` tests the build without publishing, and does not provide an artifact download.
+- `rebuild_existing`: for build tests only; requires `publish=false` when the tag already exists.
 
-**Important safety limitation:** filesystem differences do not prove which process wrote the files. If another Firefox/Thunderbird instance changes files during the session, a snapshot can be misleading; users who require process-level attribution should capture a diagnostic Procmon trace. Old hash folders already present before the first tracked session (including the previously seen `635D...` folder) are **not** automatically claimed or deleted. This is intentional to protect installed browsers and Thunderbird.
+## Failure handling
 
-Logs: `Data\UpdaterCleanup\ProgramDataTracker\tracker.log`, plus regular `launcher.log` and `cleanup.log`. Keep `Data` during upgrades. The source/test ZIP is not a Windows-validated release.
+- If the upstream GitHub API or asset digest is unavailable, discovery/build fails rather than downloading an unverified package.
+- If a tag has already been used for a mismatched/incomplete release, choose a new `package_revision`; do not delete or overwrite releases in place.
+- A green workflow proves a structurally valid ZIP+PAF publishing pipeline, **not** a working Windows portable browser.
+- Existing workflow `.github/workflows/build-zen-browser-portable.yml` remains fully available as a fallback.
+
+## Shared components
+
+- Independent NSIS packager: https://github.com/vhick/portable-package-builder (`v1.0.0`). Not official PortableApps.com certification.
+- Release publisher: https://github.com/vhick/portable-release-publisher (`v1.1.1`).
+- Official upstream: https://github.com/zen-browser/desktop/releases/latest.
